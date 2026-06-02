@@ -1,8 +1,4 @@
 @import "tailwindcss";
-@plugin "./daisyui.mjs";
-@plugin "./daisyui-theme.mjs";
-@custom-variant dark (&:where(.dark, .dark *));
-@source "../**/*.razor";
 
 html, body {
     font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;

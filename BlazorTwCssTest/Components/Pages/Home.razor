@@ -1,11 +1,7 @@
 @page "/"
 @attribute [StreamRendering]
-@using BlazorTwCssTest.Toast
-@using BlazorTwCssTest.Components.Shared
 
 <PageTitle>Contact Us</PageTitle>
-
-<ToastContainer Toast="@_toast" />
 
 <div class="min-h-screen flex items-center justify-center bg-base-200 p-4">
     <div class="card bg-base-100 shadow-xl w-full max-w-lg">
@@ -44,8 +40,6 @@
     [SupplyParameterFromForm]
     private ContactFormModel _model { get; set; } = default!;
 
-    private ToastMessage? _toast;
-
     protected override void OnInitialized()
     {
         _model ??= new();
@@ -57,7 +51,6 @@
         await Task.Delay(500);
 
         // Show success toast
-        _toast = new ToastMessage("Message sent successfully!", ToastType.Success);
 
         // Reset form
         _model = new();

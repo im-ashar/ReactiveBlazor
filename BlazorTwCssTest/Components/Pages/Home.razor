@@ -1,0 +1,119 @@
+@page "/"
+@inherits ReactiveBlazor.ReactiveComponent
+
+<PageTitle>ReactiveBlazor Demo</PageTitle>
+
+<div class="space-y-8">
+    <!-- Hero Section -->
+    <div class="hero bg-gradient-to-br from-primary/10 via-base-100 to-secondary/10 rounded-2xl p-8 shadow-sm border border-base-300">
+        <div class="hero-content text-center">
+            <div class="max-w-2xl">
+                <h1 class="text-4xl font-bold bg-gradient-to-r from-primary to-secondary bg-clip-text text-transparent">
+                    ReactiveBlazor
+                </h1>
+                <p class="py-4 text-base-content/70 text-lg">
+                    Stateful interactive components for Blazor Static SSR —
+                    <span class="font-semibold text-base-content">no SignalR, no WebAssembly.</span>
+                    Every click dispatches a server round-trip via <code class="badge badge-ghost badge-sm">fetch</code>
+                    and the DOM is morphed with <code class="badge badge-ghost badge-sm">Idiomorph</code>.
+                </p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Demo Grid -->
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <!-- Counter Demo -->
+        <ReactiveRoot Owner="this">
+            <div class="card bg-base-100 shadow-md border border-base-300 h-full">
+                <div class="card-body">
+                    <div class="flex items-center gap-2 mb-2">
+                        <div class="badge badge-primary badge-outline">Counter</div>
+                        <span class="text-xs text-base-content/50">data-on-click + data-args</span>
+                    </div>
+                    <h2 class="card-title text-base-content">State & Actions</h2>
+                    <p class="text-base-content/60 text-sm">
+                        Public properties are state. Methods with <code class="text-primary">[ReactiveAction]</code> are callable from the client.
+                    </p>
+
+                    <div class="flex items-center justify-center py-6">
+                        <div class="text-6xl font-bold tabular-nums text-primary transition-all">
+                            @Count
+                        </div>
+                    </div>
+
+                    <div class="flex gap-2 justify-center flex-wrap">
+                        <button class="btn btn-outline btn-sm" type="button" data-on-click="Decrement">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M20 12H4" /></svg>
+                            −1
+                        </button>
+                        <button class="btn btn-primary btn-sm" type="button" data-on-click="Increment">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4" /></svg>
+                            +1
+                        </button>
+                        <button class="btn btn-secondary btn-sm" type="button" data-on-click="Add" data-args="[5]">
+                            +5
+                        </button>
+                        <button class="btn btn-ghost btn-sm" type="button" data-on-click="Reset">
+                            Reset
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </ReactiveRoot>
+
+        <!-- Item Picker Demo -->
+        <ItemPicker />
+
+        <!-- Todo List Demo -->
+        <TodoList />
+
+        <!-- Feature Highlights -->
+        <div class="card bg-base-100 shadow-md border border-base-300 h-full">
+            <div class="card-body">
+                <div class="flex items-center gap-2 mb-2">
+                    <div class="badge badge-accent badge-outline">Architecture</div>
+                </div>
+                <h2 class="card-title text-base-content">How It Works</h2>
+                <ul class="space-y-3 text-sm text-base-content/70 mt-2">
+                    <li class="flex gap-3 items-start">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-success shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                        <span><strong class="text-base-content">Signed state</strong> — encrypted with Data Protection, tamper-proof</span>
+                    </li>
+                    <li class="flex gap-3 items-start">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-success shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                        <span><strong class="text-base-content">CSRF protected</strong> — antiforgery token validated on every request</span>
+                    </li>
+                    <li class="flex gap-3 items-start">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-success shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                        <span><strong class="text-base-content">Request queuing</strong> — rapid clicks are serialized, no race conditions</span>
+                    </li>
+                    <li class="flex gap-3 items-start">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-success shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                        <span><strong class="text-base-content">DOM morphing</strong> — Idiomorph preserves focus, scroll, and CSS transitions</span>
+                    </li>
+                    <li class="flex gap-3 items-start">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-success shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                        <span><strong class="text-base-content">~180 lines JS</strong> — zero dependencies, no build step required</span>
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    public int Count { get; set; }
+
+    [ReactiveAction]
+    public void Increment() => Count++;
+
+    [ReactiveAction]
+    public void Decrement() => Count--;
+
+    [ReactiveAction]
+    public void Add(int amount) => Count += amount;
+
+    [ReactiveAction]
+    public void Reset() => Count = 0;
+}

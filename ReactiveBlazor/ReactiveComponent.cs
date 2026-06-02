@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using System.Reflection;
 using System.Text.Json;
 using Microsoft.AspNetCore.Components;
@@ -5,29 +6,60 @@ using Microsoft.AspNetCore.Components;
 namespace ReactiveBlazor;
 
 /// <summary>
-/// Base class for stateful SSR components. Inherit from this with `@inherits ReactiveBlazor.ReactiveComponent`
-/// and wrap your markup in &lt;ReactiveRoot Owner="this"&gt;.
-///
-/// Public read/write properties declared on your component are treated as STATE: they are serialized into
-/// the page (signed) and rehydrated on every round-trip. Public methods declared on your component are
-/// treated as ACTIONS that the client can invoke by name.
+/// Base class for stateful SSR components that support client-side interactivity without
+/// SignalR or WebAssembly. Inherit from this and wrap your markup in
+/// <c>&lt;ReactiveRoot Owner="this"&gt;</c>.
 /// </summary>
+/// <remarks>
+/// <para>
+/// <b>State</b>: Public read/write properties declared on your subclass are automatically
+/// serialized into the page (signed and encrypted) and rehydrated on every round-trip.
+/// Exclude properties with <see cref="ReactiveIgnoreAttribute"/>.
+/// </para>
+/// <para>
+/// <b>Actions</b>: Public methods decorated with <see cref="ReactiveActionAttribute"/> can
+/// be invoked from the client via <c>data-on-click</c>, <c>data-on-change</c>, etc.
+/// </para>
+/// </remarks>
 public abstract class ReactiveComponent : ComponentBase
 {
-    // ---- Internal control parameters. Set ONLY by the dispatch endpoint, never from your markup. ----
-    [Parameter] public string? ReactiveState { get; set; }
-    [Parameter] public string? ReactiveAction { get; set; }
-    [Parameter] public string? ReactiveArgs { get; set; }
-    [Parameter] public string? ReactiveBindings { get; set; }
+    // ---- Internal control parameters. Set by the dispatch endpoint, never from user markup. ----
 
-    /// <summary>Stable identity carried across round-trips inside the signed state (used by the morph step).</summary>
+    /// <exclude />
+    [Parameter, EditorBrowsable(EditorBrowsableState.Never)]
+    public string? ReactiveState { get; set; }
+
+    /// <exclude />
+    [Parameter, EditorBrowsable(EditorBrowsableState.Never)]
+    public string? ReactiveAction { get; set; }
+
+    /// <exclude />
+    [Parameter, EditorBrowsable(EditorBrowsableState.Never)]
+    public string? ReactiveArgs { get; set; }
+
+    /// <exclude />
+    [Parameter, EditorBrowsable(EditorBrowsableState.Never)]
+    public string? ReactiveBindings { get; set; }
+
+    /// <summary>
+    /// Stable identity carried across round-trips inside the signed state.
+    /// Used by the client-side morph step to locate the component boundary.
+    /// </summary>
     public string ComponentId { get; set; } = "";
+
+    /// <summary>
+    /// When set to a URL by an action method, the client will navigate to that URL
+    /// after the response is received instead of morphing the DOM.
+    /// </summary>
+    [ReactiveIgnore]
+    public string? RedirectUrl { get; set; }
 
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
 
+    /// <inheritdoc />
     public override async Task SetParametersAsync(ParameterView parameters)
     {
-        // 1. Apply the control parameters (and any real [Parameter]s) coming in.
+        // 1. Apply control parameters (and any real [Parameter]s) coming in.
         parameters.SetParameterProperties(this);
 
         // 2. Rehydrate prior state (no-op on the very first page render).
@@ -84,19 +116,17 @@ public abstract class ReactiveComponent : ComponentBase
 
     private async Task InvokeActionAsync(string action, string? argsJson)
     {
-        // SAFETY: only public instance methods *declared on a ReactiveComponent subclass* (i.e. your own
-        // component) are callable. Framework / object / lifecycle methods are excluded. Harden further by
-        // requiring an explicit [ReactiveAction] attribute if you prefer opt-in.
         var method = GetType()
-            .GetMethods(BindingFlags.Public | BindingFlags.Instance)
+            .GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly)
             .FirstOrDefault(m =>
                 m.Name == action &&
-                typeof(ReactiveComponent).IsAssignableFrom(m.DeclaringType) &&
-                m.DeclaringType != typeof(ReactiveComponent) &&
+                m.GetCustomAttribute<ReactiveActionAttribute>() is not null &&
                 !m.IsSpecialName);
 
         if (method is null)
-            throw new InvalidOperationException($"'{action}' is not a callable action on {GetType().Name}.");
+            throw new InvalidOperationException(
+                $"'{action}' is not a [ReactiveAction] on {GetType().Name}. " +
+                "Ensure the method is public, declared on your component, and decorated with [ReactiveAction].");
 
         var args = BindArgs(method, argsJson);
         var result = method.Invoke(this, args);
@@ -105,14 +135,13 @@ public abstract class ReactiveComponent : ComponentBase
 
     // ---- Helpers ----
 
-    private static IEnumerable<PropertyInfo> StateProperties(Type t) =>
-        t.GetProperties(BindingFlags.Public | BindingFlags.Instance)
+    internal static IEnumerable<PropertyInfo> StateProperties(Type t) =>
+        t.GetProperties(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly)
          .Where(p => p.CanRead && p.CanWrite
-            && typeof(ReactiveComponent).IsAssignableFrom(p.DeclaringType)
-            && p.DeclaringType != typeof(ReactiveComponent)
             && p.GetCustomAttribute<ParameterAttribute>() is null
             && p.GetCustomAttribute<CascadingParameterAttribute>() is null
-            && p.GetCustomAttribute<InjectAttribute>() is null);
+            && p.GetCustomAttribute<InjectAttribute>() is null
+            && p.GetCustomAttribute<ReactiveIgnoreAttribute>() is null);
 
     private static object? ConvertBinding(JsonElement el, Type target)
     {
@@ -128,10 +157,10 @@ public abstract class ReactiveComponent : ComponentBase
     private static object?[] BindArgs(MethodInfo method, string? argsJson)
     {
         var ps = method.GetParameters();
-        if (ps.Length == 0) return Array.Empty<object?>();
+        if (ps.Length == 0) return [];
         var arr = string.IsNullOrEmpty(argsJson)
             ? Array.Empty<JsonElement>()
-            : JsonSerializer.Deserialize<JsonElement[]>(argsJson, Json) ?? Array.Empty<JsonElement>();
+            : JsonSerializer.Deserialize<JsonElement[]>(argsJson, Json) ?? [];
         var result = new object?[ps.Length];
         for (var i = 0; i < ps.Length; i++)
             result[i] = i < arr.Length

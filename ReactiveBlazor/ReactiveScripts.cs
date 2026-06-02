@@ -6,18 +6,24 @@ using Microsoft.AspNetCore.Http;
 namespace ReactiveBlazor;
 
 /// <summary>
-/// Place once in your layout head: &lt;ReactiveBlazor.ReactiveScripts /&gt;
-/// Emits the antiforgery request token (the JS runtime sends it back as a header) and loads reactive.js.
-/// Be sure Idiomorph is loaded too (see README).
+/// Renders the antiforgery CSRF meta tag and the <c>reactive.js</c> script tag into the page head.
+/// Place once in your root component (<c>App.razor</c>):
+/// <code>
+/// &lt;ReactiveScripts /&gt;
+/// </code>
 /// </summary>
 public sealed class ReactiveScripts : ComponentBase
 {
-    [Inject] public IAntiforgery Antiforgery { get; set; } = default!;
-    [Inject] public IHttpContextAccessor Http { get; set; } = default!;
+    [Inject] internal IAntiforgery Antiforgery { get; set; } = default!;
+    [Inject] internal IHttpContextAccessor Http { get; set; } = default!;
 
-    /// <summary>Where reactive.js is served. For an RCL package this is the _content path.</summary>
-    [Parameter] public string ScriptPath { get; set; } = "/_content/ReactiveBlazor/reactive.js";
+    /// <summary>
+    /// Override the path to <c>reactive.js</c>. Defaults to the RCL content path.
+    /// </summary>
+    [Parameter]
+    public string ScriptPath { get; set; } = "/_content/ReactiveBlazor/reactive.js";
 
+    /// <inheritdoc />
     protected override void BuildRenderTree(RenderTreeBuilder builder)
     {
         var token = Antiforgery.GetAndStoreTokens(Http.HttpContext!).RequestToken;

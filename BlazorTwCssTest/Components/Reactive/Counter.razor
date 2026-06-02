@@ -1,0 +1,21 @@
+@page "/counter"
+@inherits ReactiveBlazor.ReactiveComponent
+
+<ReactiveBlazor.ReactiveRoot Owner="this">
+    <p>Count: <strong>@Count</strong></p>
+    <button type="button" data-on-click="Increment">+1</button>
+    <button type="button" data-on-click="Decrement">-1</button>
+    <button type="button" data-on-click="Add" data-args="[5]">+5</button>
+</ReactiveBlazor.ReactiveRoot>
+
+<ItemPicker/>
+
+@code {
+    // Public read/write property => persisted state.
+    public int Count { get; set; }
+
+    // Public methods => callable actions.
+    public void Increment() => Count++;
+    public void Decrement() => Count--;
+    public void Add(int amount) => Count += amount;
+}

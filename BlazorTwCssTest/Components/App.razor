@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 
 <head>
@@ -21,6 +21,15 @@
 <body>
     <Routes />
     <script src="@Assets["_framework/blazor.web.js"]"></script>
+    <script>
+        // Re-initialize HTMX after Blazor enhanced navigation patches the DOM.
+        // Without this, new hx-* elements added by enhanced nav won't work.
+        // An enhanced load allows users to navigate between different pages
+window.Blazor.addEventListener("enhancedload", function () {
+    // HTMX need to reprocess any htmx tags because of enhanced loading
+    window.htmx.process(document.body);
+});
+    </script>
 </body>
 
 </html>

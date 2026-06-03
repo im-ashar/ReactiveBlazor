@@ -8,13 +8,15 @@ ReactiveBlazor lets you build interactive server-rendered Blazor components that
 
 - **Zero client-side framework** — ~220 lines of vanilla JS, no build step
 - **Signed & encrypted state** — component state is protected with ASP.NET Data Protection
+- **Anti-replay protection** — state tokens expire after a configurable lifetime (default: 24 hours)
 - **CSRF protected** — antiforgery token validated on every request
 - **DOM morphing** — Idiomorph preserves focus, scroll position, and CSS transitions
 - **Request queuing** — rapid interactions are serialized per component
 - **Two-way binding** — `data-bind` syncs input values to component properties
 - **Debounce support** — `data-debounce="300"` for input-heavy scenarios
 - **Redirect support** — set `RedirectUrl` in an action to navigate after response
-- **Configurable** — customize dispatch path, max state size, and more
+- **Configurable** — customize dispatch path, max state size, token lifetime, and more
+- **Multi-target** — supports .NET 8, .NET 9, and .NET 10
 
 ## Quick Start
 
@@ -28,6 +30,7 @@ dotnet add package ReactiveBlazor
 
 ```csharp
 // Program.cs
+builder.Services.AddDataProtection();  // Required — configure key storage for production
 builder.Services.AddReactiveComponents(assemblies: typeof(Program).Assembly);
 
 // After app.MapRazorComponents<App>()
@@ -40,6 +43,8 @@ app.MapReactiveComponents();
 <head>
     <!-- ... -->
     <ReactiveScripts />
+    <!-- Optional: include the default loading styles -->
+    <link rel="stylesheet" href="/_content/ReactiveBlazor/reactive.css" />
 </head>
 ```
 
@@ -93,8 +98,10 @@ app.MapReactiveComponents();
 ```csharp
 builder.Services.AddReactiveComponents(options =>
 {
-    options.MaxStateBytes = 128 * 1024;        // Max state size (default: 64KB)
-    options.DispatchPath = "/_reactive/dispatch"; // Endpoint path (default)
+    options.MaxStateBytes = 128 * 1024;              // Max state size (default: 64KB)
+    options.MaxTokenBytes = 512 * 1024;              // Max encrypted token size (default: 256KB)
+    options.StateTokenLifetime = TimeSpan.FromHours(12); // Token expiry (default: 24h)
+    options.DispatchPath = "/_reactive/dispatch";    // Endpoint path (default)
 }, assemblies: typeof(Program).Assembly);
 ```
 
@@ -107,6 +114,23 @@ Use `[ReactiveIgnore]` on properties that shouldn't round-trip:
 public string[] StaticOptions { get; set; } = ["A", "B", "C"];
 ```
 
+## Loading States
+
+ReactiveBlazor adds `data-reactive-busy` and the `reactive-loading` CSS class to the component root while a dispatch is in-flight. Include the built-in stylesheet for default opacity fade and pointer-event blocking:
+
+```html
+<link rel="stylesheet" href="/_content/ReactiveBlazor/reactive.css" />
+```
+
+Or style it yourself:
+
+```css
+[data-reactive-busy] {
+    pointer-events: none;
+    opacity: 0.5;
+}
+```
+
 ## License
 
-MIT
+[MIT](LICENSE)

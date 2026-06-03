@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using System.Reflection;
 using System.Text.Json;
 using Microsoft.AspNetCore.Antiforgery;
@@ -27,12 +26,19 @@ public static class ReactiveServiceCollectionExtensions
     /// <param name="assemblies">
     /// Assemblies to scan for reactive components. Defaults to the calling assembly if none are provided.
     /// </param>
+    /// <remarks>
+    /// <para>
+    /// <b>Data Protection</b>: ReactiveBlazor requires ASP.NET Data Protection to be registered.
+    /// Call <c>builder.Services.AddDataProtection()</c> yourself if you need custom key storage
+    /// or application name settings. If Data Protection is not registered, ASP.NET Core's
+    /// defaults will be used automatically.
+    /// </para>
+    /// </remarks>
     public static IServiceCollection AddReactiveComponents(
         this IServiceCollection services,
         Action<ReactiveOptions>? configure = null,
         params Assembly[] assemblies)
     {
-        services.AddDataProtection();
         services.AddHttpContextAccessor();
         services.AddAntiforgery(o => o.HeaderName = "RequestVerificationToken");
 
@@ -44,6 +50,7 @@ public static class ReactiveServiceCollectionExtensions
         var registry = new ReactiveComponentRegistry();
         foreach (var asm in assemblies.DefaultIfEmpty(Assembly.GetCallingAssembly()))
             registry.RegisterAssembly(asm);
+        registry.Freeze();
 
         services.AddSingleton(registry);
         services.AddScoped<IReactiveStateCodec, ReactiveStateCodec>();
@@ -78,6 +85,7 @@ public static class ReactiveEndpointRouteBuilderExtensions
         {
             var logger = loggerFactory.CreateLogger("ReactiveBlazor.Dispatch");
             var opts = options.Value;
+            var ct = http.RequestAborted;
 
             // --- Antiforgery validation ---
             try
@@ -91,24 +99,44 @@ public static class ReactiveEndpointRouteBuilderExtensions
             }
 
             // --- Parse request body ---
-            var req = await http.Request.ReadFromJsonAsync<DispatchRequest>()
+            var req = await http.Request.ReadFromJsonAsync<DispatchRequest>(ct)
                       ?? throw new BadHttpRequestException("Empty dispatch body.");
 
+            // --- Pre-decryption size check ---
+            if (req.State.Length > opts.MaxTokenBytes)
+            {
+                logger.LogWarning("Encrypted state token size {Size} bytes exceeds limit {Limit}.",
+                    req.State.Length, opts.MaxTokenBytes);
+                return Results.BadRequest("State token exceeds maximum allowed size.");
+            }
+
             // --- Unprotect and validate state ---
-            var sw = Stopwatch.StartNew();
-            var (type, stateJson) = codec.Unprotect(req.State);
+            (Type type, string stateJson) stateResult;
+            try
+            {
+                stateResult = codec.Unprotect(req.State);
+            }
+            catch (Exception ex) when (ex is System.Security.Cryptography.CryptographicException
+                                            or InvalidOperationException)
+            {
+                logger.LogWarning(ex, "State decryption/validation failed.");
+                return Results.BadRequest("Invalid or expired state. Please refresh the page.");
+            }
+
+            var (type, stateJson) = stateResult;
 
             if (stateJson.Length > opts.MaxStateBytes)
             {
-                logger.LogWarning("State size {Size} bytes exceeds limit {Limit} for {Component}.",
-                    stateJson.Length, opts.MaxStateBytes, type.Name);
-                return Results.BadRequest($"State exceeds maximum size of {opts.MaxStateBytes} bytes.");
+                logger.LogWarning("State size {Size} bytes exceeds limit {Limit}.",
+                    stateJson.Length, opts.MaxStateBytes);
+                return Results.BadRequest("State exceeds maximum allowed size.");
             }
 
-            logger.LogDebug("Dispatching action '{Action}' on {Component} (state: {StateSize} bytes).",
-                req.Action ?? "(bind-only)", type.Name, stateJson.Length);
+            logger.LogDebug("Dispatching action '{Action}' on component (state: {StateSize} bytes).",
+                req.Action ?? "(bind-only)", stateJson.Length);
 
             // --- Render the component with restored state + action ---
+            ct.ThrowIfCancellationRequested();
             await using var renderer = new HtmlRenderer(services, loggerFactory);
             var html = await renderer.Dispatcher.InvokeAsync(async () =>
             {
@@ -122,9 +150,6 @@ public static class ReactiveEndpointRouteBuilderExtensions
                 var output = await renderer.RenderComponentAsync(type, parameters);
                 return output.ToHtmlString();
             });
-
-            sw.Stop();
-            logger.LogDebug("Rendered {Component} in {Elapsed}ms.", type.Name, sw.ElapsedMilliseconds);
 
             return Results.Content(html, "text/html");
         });

@@ -1,4 +1,4 @@
 <Solution>
-  <Project Path="ReactiveBlazor/ReactiveBlazor.csproj" />
   <Project Path="BlazorTwCssTest/BlazorTwCssTest.csproj" />
+  <Project Path="ReactiveBlazor/ReactiveBlazor.csproj" />
 </Solution>

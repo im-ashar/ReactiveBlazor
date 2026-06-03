@@ -9,7 +9,7 @@ builder.Services.AddRazorComponents();
 builder.Services.AddDataProtection()
     .PersistKeysToFileSystem(new DirectoryInfo(
         Path.Combine(builder.Environment.ContentRootPath, "keys")))
-    .SetApplicationName("BlazorTwCssTest");
+    .SetApplicationName("ReactiveBlazor.Demo");
 builder.Services.AddReactiveComponents(assemblies: typeof(Program).Assembly);
 
 var app = builder.Build();

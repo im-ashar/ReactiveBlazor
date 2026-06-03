@@ -1,20 +1,20 @@
 <Project Sdk="Microsoft.NET.Sdk.Razor">
 
   <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
+    <TargetFrameworks>net8.0;net9.0;net10.0</TargetFrameworks>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <RootNamespace>ReactiveBlazor</RootNamespace>
 
     <!-- NuGet Package Metadata -->
     <PackageId>ReactiveBlazor</PackageId>
-    <Version>0.1.0</Version>
+    <Version>0.2.0</Version>
     <Authors>Muhammad Ashar</Authors>
     <Description>Stateful interactive components for Blazor Static SSR — no SignalR, no WebAssembly. Every click dispatches a server round-trip via fetch and the DOM is morphed with Idiomorph.</Description>
     <PackageTags>blazor;ssr;reactive;components;static-ssr;interactive</PackageTags>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <PackageReadmeFile>README.md</PackageReadmeFile>
-    <RepositoryUrl>https://github.com/im-ashar/BlazorTwCssTest</RepositoryUrl>
+    <RepositoryUrl>https://github.com/im-ashar/ReactiveBlazor</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
 
     <!-- Generate XML docs for IntelliSense -->
@@ -28,6 +28,8 @@
 
   <ItemGroup>
     <None Include="README.md" Pack="true" PackagePath="\" />
+    <None Include="..\LICENSE" Pack="true" PackagePath="\" />
+    <None Include="..\CHANGELOG.md" Pack="true" PackagePath="\" />
   </ItemGroup>
 
 </Project>

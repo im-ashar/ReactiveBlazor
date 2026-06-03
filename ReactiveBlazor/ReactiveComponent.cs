@@ -119,7 +119,7 @@ public abstract class ReactiveComponent : ComponentBase
     {
         var method = ResolveAction(GetType(), action)
             ?? throw new InvalidOperationException(
-                $"'{action}' is not a [ReactiveAction] on {GetType().Name}. " +
+                $"Unknown action '{action}'. " +
                 "Ensure the method is public, declared on your component, and decorated with [ReactiveAction].");
 
         var args = BindArgs(method, argsJson);

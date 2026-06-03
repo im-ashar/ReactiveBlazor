@@ -1,5 +1,4 @@
 using BlazorTwCssTest.Components;
-using Microsoft.AspNetCore.Antiforgery;
 using Microsoft.AspNetCore.DataProtection;
 using ReactiveBlazor;
 
@@ -22,19 +21,8 @@ if (!app.Environment.IsDevelopment())
     app.UseHsts();
 }
 
-app.UseStatusCodePagesWithReExecute("/not-found", createScopeForStatusCodePages: true);
 app.UseHttpsRedirection();
 app.UseAntiforgery();
-
-app.Use(async (context, next) =>
-{
-    if (HttpMethods.IsGet(context.Request.Method))
-    {
-        var af = context.RequestServices.GetRequiredService<IAntiforgery>();
-        af.GetAndStoreTokens(context);
-    }
-    await next();
-});
 
 app.MapStaticAssets();
 app.MapRazorComponents<App>();

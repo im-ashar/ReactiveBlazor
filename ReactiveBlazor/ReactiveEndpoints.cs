@@ -65,7 +65,10 @@ public static class ReactiveEndpointRouteBuilderExtensions
     /// </summary>
     public static IEndpointRouteBuilder MapReactiveComponents(this IEndpointRouteBuilder endpoints)
     {
-        endpoints.MapPost("/_reactive/dispatch", async (
+        var dispatchPath = endpoints.ServiceProvider
+            .GetRequiredService<IOptions<ReactiveOptions>>().Value.DispatchPath;
+
+        endpoints.MapPost(dispatchPath, async (
             HttpContext http,
             IReactiveStateCodec codec,
             IAntiforgery antiforgery,

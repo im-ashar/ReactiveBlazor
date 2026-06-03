@@ -1,6 +1,9 @@
+using System.Collections.Concurrent;
 using System.Reflection;
+using System.Security.Cryptography;
 using System.Text;
 using Microsoft.AspNetCore.DataProtection;
+using Microsoft.Extensions.Logging;
 
 namespace ReactiveBlazor;
 
@@ -13,7 +16,11 @@ public interface IReactiveStateCodec
     /// <summary>Encrypts and signs the state JSON along with the component type identifier.</summary>
     string Protect(Type componentType, string stateJson);
 
-    /// <summary>Decrypts and verifies the state token, returning the component type and raw JSON.</summary>
+    /// <summary>
+    /// Decrypts and verifies the state token, returning the component type and raw JSON.
+    /// If the state shape has changed since the token was issued (e.g. after a deployment),
+    /// returns an empty JSON object (<c>{}</c>) so the component starts with default state.
+    /// </summary>
     (Type Type, string StateJson) Unprotect(string token);
 }
 
@@ -21,11 +28,19 @@ internal sealed class ReactiveStateCodec : IReactiveStateCodec
 {
     private readonly IDataProtector _protector;
     private readonly ReactiveComponentRegistry _registry;
+    private readonly ILogger<ReactiveStateCodec> _logger;
 
-    public ReactiveStateCodec(IDataProtectionProvider dp, ReactiveComponentRegistry registry)
+    // Cache the hash per component type — it never changes at runtime.
+    private static readonly ConcurrentDictionary<Type, uint> StateHashCache = new();
+
+    public ReactiveStateCodec(
+        IDataProtectionProvider dp,
+        ReactiveComponentRegistry registry,
+        ILogger<ReactiveStateCodec> logger)
     {
-        _protector = dp.CreateProtector("ReactiveBlazor.State.v1");
+        _protector = dp.CreateProtector("ReactiveBlazor.State.v2");
         _registry = registry;
+        _logger = logger;
     }
 
     public string Protect(Type componentType, string stateJson)
@@ -33,15 +48,30 @@ internal sealed class ReactiveStateCodec : IReactiveStateCodec
         var key = _registry.GetKey(componentType);
         var keyBytes = Encoding.UTF8.GetBytes(key);
         var stateBytes = Encoding.UTF8.GetBytes(stateJson);
+        var hash = ComputeStateHash(componentType);
 
-        // Length-prefixed binary format: [4-byte key length (big-endian)][key bytes][state bytes]
-        var payload = new byte[4 + keyBytes.Length + stateBytes.Length];
-        payload[0] = (byte)(keyBytes.Length >> 24);
-        payload[1] = (byte)(keyBytes.Length >> 16);
-        payload[2] = (byte)(keyBytes.Length >> 8);
-        payload[3] = (byte)keyBytes.Length;
-        Buffer.BlockCopy(keyBytes, 0, payload, 4, keyBytes.Length);
-        Buffer.BlockCopy(stateBytes, 0, payload, 4 + keyBytes.Length, stateBytes.Length);
+        // Binary format: [4-byte key length (big-endian)][key bytes][4-byte state hash][state bytes]
+        var payload = new byte[4 + keyBytes.Length + 4 + stateBytes.Length];
+        var offset = 0;
+
+        // Key length (4 bytes, big-endian)
+        payload[offset++] = (byte)(keyBytes.Length >> 24);
+        payload[offset++] = (byte)(keyBytes.Length >> 16);
+        payload[offset++] = (byte)(keyBytes.Length >> 8);
+        payload[offset++] = (byte)keyBytes.Length;
+
+        // Key bytes
+        Buffer.BlockCopy(keyBytes, 0, payload, offset, keyBytes.Length);
+        offset += keyBytes.Length;
+
+        // State hash (4 bytes, big-endian)
+        payload[offset++] = (byte)(hash >> 24);
+        payload[offset++] = (byte)(hash >> 16);
+        payload[offset++] = (byte)(hash >> 8);
+        payload[offset++] = (byte)hash;
+
+        // State bytes
+        Buffer.BlockCopy(stateBytes, 0, payload, offset, stateBytes.Length);
 
         return _protector.Protect(Convert.ToBase64String(payload));
     }
@@ -52,18 +82,62 @@ internal sealed class ReactiveStateCodec : IReactiveStateCodec
         var raw = _protector.Unprotect(token);
         var payload = Convert.FromBase64String(raw);
 
-        if (payload.Length < 4)
+        if (payload.Length < 8)
             throw new InvalidOperationException("Malformed state envelope: too short.");
 
+        // Read key length
         var keyLength = (payload[0] << 24) | (payload[1] << 16) | (payload[2] << 8) | payload[3];
-        if (keyLength < 0 || 4 + keyLength > payload.Length)
+        if (keyLength < 0 || 4 + keyLength + 4 > payload.Length)
             throw new InvalidOperationException("Malformed state envelope: invalid key length.");
 
         var key = Encoding.UTF8.GetString(payload, 4, keyLength);
-        var stateJson = Encoding.UTF8.GetString(payload, 4 + keyLength, payload.Length - 4 - keyLength);
+        var type = _registry.GetType(key);
 
-        return (_registry.GetType(key), stateJson);
+        // Read state hash
+        var hashOffset = 4 + keyLength;
+        var storedHash = (uint)(
+            (payload[hashOffset] << 24) |
+            (payload[hashOffset + 1] << 16) |
+            (payload[hashOffset + 2] << 8) |
+            payload[hashOffset + 3]);
+
+        var currentHash = ComputeStateHash(type);
+
+        // If the hash doesn't match, the component's state shape changed since this token
+        // was issued (e.g. after a deployment). Return empty state so the component resets
+        // cleanly instead of deserializing into a mismatched shape.
+        if (storedHash != currentHash)
+        {
+            _logger.LogInformation(
+                "State shape mismatch for {Component} (stored hash {Stored:X8}, current {Current:X8}). Resetting to default state.",
+                type.Name, storedHash, currentHash);
+            return (type, "{}");
+        }
+
+        var stateJson = Encoding.UTF8.GetString(payload, hashOffset + 4, payload.Length - hashOffset - 4);
+        return (type, stateJson);
     }
+
+    /// <summary>
+    /// Computes a stable hash from the component's state property names and types.
+    /// Changes when properties are added, removed, renamed, or change type.
+    /// </summary>
+    private static uint ComputeStateHash(Type componentType) =>
+        StateHashCache.GetOrAdd(componentType, static t =>
+        {
+            var props = ReactiveComponent.StateProperties(t);
+            var sb = new StringBuilder();
+            foreach (var p in props.OrderBy(p => p.Name, StringComparer.Ordinal))
+            {
+                sb.Append(p.Name);
+                sb.Append(':');
+                sb.Append(p.PropertyType.FullName);
+                sb.Append(';');
+            }
+
+            var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(sb.ToString()));
+            return (uint)((bytes[0] << 24) | (bytes[1] << 16) | (bytes[2] << 8) | bytes[3]);
+        });
 }
 
 /// <summary>

@@ -1,20 +1,30 @@
-// ReactiveBlazor client runtime v2.
+// ReactiveBlazor client runtime v3.
 // Handles: dispatch, request queuing, DOM morphing (Idiomorph), busy state,
-//          error handling, debounce, redirect, and generic data-on-* events.
+//          error handling, debounce, redirect, retry, and generic data-on-* events.
+//
+// Queue behavior:
+//   By default, rapid dispatches for the same component keep only the latest pending
+//   request (ideal for input/change events where intermediate values are superseded).
+//   For non-idempotent actions (e.g. "delete item"), add data-queue="all" to the trigger
+//   element so every request is processed sequentially.
 (function () {
   "use strict";
 
-  var ENDPOINT = "/_reactive/dispatch";
+  // ---- Configuration (read from meta tags emitted by ReactiveScripts) ----
 
-  // Per-component request queues. Key = component element id.
-  var queues = {};
-
-  // ---- Helpers ----
+  function endpoint() {
+    var m = document.querySelector('meta[name="reactive-endpoint"]');
+    return m ? m.getAttribute("content") : "/_reactive/dispatch";
+  }
 
   function csrfToken() {
     var m = document.querySelector('meta[name="reactive-csrf"]');
     return m ? m.getAttribute("content") : "";
   }
+
+  // ---- Per-component request queues ----
+  // Key = component element id.
+  var queues = {};
 
   function rootOf(el) {
     return el.closest("[data-component]");
@@ -41,24 +51,32 @@
     try { return JSON.parse(raw); } catch (e) { return [raw]; }
   }
 
-  // ---- Request queue (serializes dispatches per component) ----
+  // ---- Request queue ----
+  // Two modes:
+  //   "latest" (default): only the most recent pending request is kept.
+  //   "all": every request is queued and processed in order.
 
-  function enqueue(rootId, fn) {
+  function enqueue(rootId, fn, mode) {
     if (!queues[rootId]) {
-      queues[rootId] = { running: false, pending: null };
+      queues[rootId] = { running: false, pending: [] };
     }
     var q = queues[rootId];
-    // Only keep the latest pending request (newer input supersedes older).
-    q.pending = fn;
+
+    if (mode === "all") {
+      q.pending.push(fn);
+    } else {
+      // "latest" — supersede any pending request.
+      q.pending = [fn];
+    }
+
     processQueue(rootId);
   }
 
   function processQueue(rootId) {
     var q = queues[rootId];
-    if (!q || q.running || !q.pending) return;
+    if (!q || q.running || q.pending.length === 0) return;
     q.running = true;
-    var fn = q.pending;
-    q.pending = null;
+    var fn = q.pending.shift();
     fn().finally(function () {
       q.running = false;
       processQueue(rootId);
@@ -67,11 +85,11 @@
 
   // ---- Core dispatch ----
 
-  function dispatch(root, action, args) {
+  function dispatch(root, action, args, queueMode) {
     var rootId = root.id;
     enqueue(rootId, function () {
       return doDispatch(root, action, args);
-    });
+    }, queueMode);
   }
 
   async function doDispatch(root, action, args) {
@@ -87,21 +105,15 @@
     });
 
     root.setAttribute("data-reactive-busy", "");
+    root.classList.add("reactive-loading");
+
     try {
-      var res = await fetch(ENDPOINT, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "RequestVerificationToken": csrfToken()
-        },
-        body: body
-      });
+      var res = await fetchWithRetry(body);
 
       if (!res.ok) {
         var errorText = await res.text();
         console.error("ReactiveBlazor dispatch failed:", res.status, errorText);
-        root.removeAttribute("data-reactive-busy");
-        // Fire error event for custom handling.
+        clearBusy(root);
         root.dispatchEvent(new CustomEvent("reactive:error", {
           bubbles: true,
           detail: { status: res.status, message: errorText }
@@ -114,13 +126,11 @@
       tmp.innerHTML = html;
 
       // Find the matching ReactiveRoot by its stable ID.
-      // The server may return HTML containing content outside the ReactiveRoot
-      // (e.g., a page component with child components), so we can't use firstElementChild.
       var incoming = tmp.content.querySelector("#" + CSS.escape(root.id))
                   || tmp.content.querySelector("[data-component]")
                   || tmp.content.firstElementChild;
       if (!incoming) {
-        root.removeAttribute("data-reactive-busy");
+        clearBusy(root);
         return;
       }
 
@@ -131,7 +141,7 @@
         return;
       }
 
-      // Morph the DOM.
+      // Morph the DOM using Idiomorph.
       if (window.Idiomorph) {
         Idiomorph.morph(root, incoming, { morphStyle: "outerHTML" });
       } else {
@@ -141,13 +151,12 @@
       // Clear busy on the (now-replaced) element.
       var updated = document.getElementById(incoming.id || root.id);
       if (updated) {
-        updated.removeAttribute("data-reactive-busy");
-        // Fire success event.
+        clearBusy(updated);
         updated.dispatchEvent(new CustomEvent("reactive:updated", { bubbles: true }));
       }
     } catch (err) {
       console.error("ReactiveBlazor network error:", err);
-      root.removeAttribute("data-reactive-busy");
+      clearBusy(root);
       root.dispatchEvent(new CustomEvent("reactive:error", {
         bubbles: true,
         detail: { status: 0, message: err.message }
@@ -155,21 +164,43 @@
     }
   }
 
+  function clearBusy(el) {
+    el.removeAttribute("data-reactive-busy");
+    el.classList.remove("reactive-loading");
+  }
+
+  // ---- Fetch with one retry on network failure ----
+
+  async function fetchWithRetry(body) {
+    var url = endpoint();
+    var headers = {
+      "Content-Type": "application/json",
+      "RequestVerificationToken": csrfToken()
+    };
+
+    try {
+      return await fetch(url, { method: "POST", headers: headers, body: body });
+    } catch (firstErr) {
+      // Retry once after 1 second on network error (not HTTP errors).
+      await new Promise(function (r) { setTimeout(r, 1000); });
+      return await fetch(url, { method: "POST", headers: headers, body: body });
+    }
+  }
+
   // ---- Debounce ----
 
   var debounceTimers = {};
 
-  function debounced(root, action, args, ms) {
+  function debounced(root, action, args, ms, queueMode) {
     var key = root.id + ":" + (action || "");
     clearTimeout(debounceTimers[key]);
     debounceTimers[key] = setTimeout(function () {
-      dispatch(root, action, args);
+      dispatch(root, action, args, queueMode);
     }, ms);
   }
 
   // ---- Delegated event handlers ----
 
-  // Generic handler factory for data-on-{event} attributes.
   function handleEvent(eventName) {
     document.addEventListener(eventName, function (e) {
       var attr = "data-on-" + eventName;
@@ -178,7 +209,7 @@
       var root = rootOf(trigger);
       if (!root) return;
 
-      // Prevent default for click events (buttons, links).
+      // Prevent default for click and submit events.
       if (eventName === "click" || eventName === "submit") {
         e.preventDefault();
       }
@@ -186,11 +217,12 @@
       var action = trigger.getAttribute(attr) || null;
       var args = parseArgs(trigger);
       var debounceMs = parseInt(trigger.getAttribute("data-debounce"), 10);
+      var queueMode = trigger.getAttribute("data-queue") || "latest";
 
       if (debounceMs > 0) {
-        debounced(root, action, args, debounceMs);
+        debounced(root, action, args, debounceMs, queueMode);
       } else {
-        dispatch(root, action, args);
+        dispatch(root, action, args, queueMode);
       }
     });
   }
@@ -203,8 +235,8 @@
   window.ReactiveBlazor = {
     dispatch: function (el) {
       var root = rootOf(el) || el;
-      dispatch(root, null, []);
+      dispatch(root, null, [], "latest");
     },
-    version: "2.0.0"
+    version: "3.0.0"
   };
 })();

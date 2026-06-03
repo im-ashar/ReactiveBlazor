@@ -14,6 +14,8 @@ public sealed class ReactiveOptions
 
     /// <summary>
     /// The URL path where the reactive dispatch endpoint is mapped.
+    /// This value is used by both the server-side endpoint and the client-side JS runtime
+    /// (emitted via a <c>&lt;meta name="reactive-endpoint"&gt;</c> tag).
     /// Default: <c>/_reactive/dispatch</c>.
     /// </summary>
     public string DispatchPath { get; set; } = "/_reactive/dispatch";

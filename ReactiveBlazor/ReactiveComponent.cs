@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.ComponentModel;
 using System.Reflection;
 using System.Text.Json;
@@ -116,15 +117,8 @@ public abstract class ReactiveComponent : ComponentBase
 
     private async Task InvokeActionAsync(string action, string? argsJson)
     {
-        var method = GetType()
-            .GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly)
-            .FirstOrDefault(m =>
-                m.Name == action &&
-                m.GetCustomAttribute<ReactiveActionAttribute>() is not null &&
-                !m.IsSpecialName);
-
-        if (method is null)
-            throw new InvalidOperationException(
+        var method = ResolveAction(GetType(), action)
+            ?? throw new InvalidOperationException(
                 $"'{action}' is not a [ReactiveAction] on {GetType().Name}. " +
                 "Ensure the method is public, declared on your component, and decorated with [ReactiveAction].");
 
@@ -133,15 +127,34 @@ public abstract class ReactiveComponent : ComponentBase
         if (result is Task task) await task;
     }
 
-    // ---- Helpers ----
+    // ---- Cached reflection helpers ----
 
-    internal static IEnumerable<PropertyInfo> StateProperties(Type t) =>
-        t.GetProperties(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly)
-         .Where(p => p.CanRead && p.CanWrite
-            && p.GetCustomAttribute<ParameterAttribute>() is null
-            && p.GetCustomAttribute<CascadingParameterAttribute>() is null
-            && p.GetCustomAttribute<InjectAttribute>() is null
-            && p.GetCustomAttribute<ReactiveIgnoreAttribute>() is null);
+    private static readonly ConcurrentDictionary<Type, PropertyInfo[]> StatePropsCache = new();
+    private static readonly ConcurrentDictionary<(Type, string), MethodInfo?> ActionCache = new();
+
+    /// <summary>
+    /// Returns the cached set of public read/write state properties for a reactive component type.
+    /// Properties decorated with <c>[Parameter]</c>, <c>[CascadingParameter]</c>,
+    /// <c>[Inject]</c>, or <c>[ReactiveIgnore]</c> are excluded.
+    /// </summary>
+    internal static PropertyInfo[] StateProperties(Type t) =>
+        StatePropsCache.GetOrAdd(t, static type =>
+            type.GetProperties(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly)
+                .Where(p => p.CanRead && p.CanWrite
+                    && p.GetCustomAttribute<ParameterAttribute>() is null
+                    && p.GetCustomAttribute<CascadingParameterAttribute>() is null
+                    && p.GetCustomAttribute<InjectAttribute>() is null
+                    && p.GetCustomAttribute<ReactiveIgnoreAttribute>() is null)
+                .ToArray());
+
+    private static MethodInfo? ResolveAction(Type type, string action) =>
+        ActionCache.GetOrAdd((type, action), static key =>
+            key.Item1
+                .GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly)
+                .FirstOrDefault(m =>
+                    m.Name == key.Item2 &&
+                    m.GetCustomAttribute<ReactiveActionAttribute>() is not null &&
+                    !m.IsSpecialName));
 
     private static object? ConvertBinding(JsonElement el, Type target)
     {

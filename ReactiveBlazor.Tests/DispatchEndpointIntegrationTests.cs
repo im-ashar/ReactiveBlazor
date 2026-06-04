@@ -198,6 +198,19 @@ public class DispatchEndpointIntegrationTests : IAsyncDisposable
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
+
+    // ── Null or empty state ───────────────────────────────────────────────
+
+    [Fact]
+    public async Task Dispatch_NullOrEmptyState_Returns400()
+    {
+        var request = CreateDispatchRequest(null!, "Increment");
+        var response = await _client.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        var body = await response.Content.ReadAsStringAsync();
+        Assert.Contains("State token is missing.", body);
+    }
 }
 
 // ── Test component ──────────────────────────────────────────────────────────

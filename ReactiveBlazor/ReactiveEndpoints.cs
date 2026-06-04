@@ -102,6 +102,12 @@ public static class ReactiveEndpointRouteBuilderExtensions
             var req = await http.Request.ReadFromJsonAsync<DispatchRequest>(ct)
                       ?? throw new BadHttpRequestException("Empty dispatch body.");
 
+            if (string.IsNullOrEmpty(req.State))
+            {
+                logger.LogWarning("State token is null or empty.");
+                return Results.BadRequest("State token is missing.");
+            }
+
             // --- Pre-decryption size check ---
             if (req.State.Length > opts.MaxTokenBytes)
             {

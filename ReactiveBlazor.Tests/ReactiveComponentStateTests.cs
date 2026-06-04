@@ -307,11 +307,43 @@ public class ReactiveComponentStateTests
         var task = (Task)method.Invoke(comp, [action, argsJson])!;
         await task;
     }
+
+    [Fact]
+    public void StateProperties_IncludesInheritedProperties()
+    {
+        var props = ReactiveComponent.StateProperties(typeof(InheritedComponent));
+        var names = props.Select(p => p.Name).ToHashSet();
+
+        Assert.Contains("BaseName", names);
+        Assert.Contains("ChildValue", names);
+    }
+
+    [Fact]
+    public void InvokeAction_InheritedAction_Callable()
+    {
+        var comp = new InheritedComponent();
+        InvokeAction(comp, "SetBaseName", "[\"new-base\"]");
+        Assert.Equal("new-base", comp.BaseName);
+    }
+
+    [Fact]
+    public void ApplyBindings_EmptyStringOnNullablePrimitive_SetsNull()
+    {
+        var comp = new NullablePrimitiveComponent { NullableInt = 123 };
+        InvokeApplyBindings(comp, "{\"NullableInt\":\"\"}");
+        Assert.Null(comp.NullableInt);
+    }
 }
 
 // Extra helper component for bool binding test
 public class BoolComponent : ReactiveComponent
 {
     public bool IsEnabled { get; set; }
+    protected override void BuildRenderTree(Microsoft.AspNetCore.Components.Rendering.RenderTreeBuilder builder) { }
+}
+
+public class NullablePrimitiveComponent : ReactiveComponent
+{
+    public int? NullableInt { get; set; }
     protected override void BuildRenderTree(Microsoft.AspNetCore.Components.Rendering.RenderTreeBuilder builder) { }
 }

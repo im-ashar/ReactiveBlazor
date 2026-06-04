@@ -88,14 +88,23 @@ internal sealed class ReactiveStateCodec : IReactiveStateCodec
         // State bytes
         Buffer.BlockCopy(stateBytes, 0, payload, offset, stateBytes.Length);
 
-        return _protector.Protect(Convert.ToBase64String(payload));
+        return Convert.ToBase64String(_protector.Protect(payload));
     }
 
     public (Type Type, string StateJson) Unprotect(string token)
     {
+        byte[] protectedBytes;
+        try
+        {
+            protectedBytes = Convert.FromBase64String(token);
+        }
+        catch (FormatException ex)
+        {
+            throw new CryptographicException("The token is not a valid Base64 string.", ex);
+        }
+
         // Throws CryptographicException if the payload was tampered with.
-        var raw = _protector.Unprotect(token);
-        var payload = Convert.FromBase64String(raw);
+        var payload = _protector.Unprotect(protectedBytes);
 
         // Minimum: 4 (key len) + 1 (key) + 4 (hash) + 8 (timestamp) = 17
         if (payload.Length < 17)

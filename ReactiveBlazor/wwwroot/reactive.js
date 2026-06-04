@@ -48,7 +48,12 @@
   function parseArgs(el) {
     var raw = el.getAttribute("data-args");
     if (!raw) return [];
-    try { return JSON.parse(raw); } catch (e) { return [raw]; }
+    try {
+      var parsed = JSON.parse(raw);
+      return Array.isArray(parsed) ? parsed : [parsed];
+    } catch (e) {
+      return [raw];
+    }
   }
 
   // ---- Request queue ----

@@ -45,6 +45,24 @@ public class OtherComponent : ReactiveComponent
     protected override void BuildRenderTree(Microsoft.AspNetCore.Components.Rendering.RenderTreeBuilder builder) { }
 }
 
+public class CustomBaseComponent : ReactiveComponent
+{
+    public string BaseName { get; set; } = "base";
+
+    [ReactiveAction]
+    public void SetBaseName(string name) => BaseName = name;
+    protected override void BuildRenderTree(Microsoft.AspNetCore.Components.Rendering.RenderTreeBuilder builder) { }
+}
+
+public class InheritedComponent : CustomBaseComponent
+{
+    public int ChildValue { get; set; } = 42;
+
+    [ReactiveAction]
+    public void SetChildValue(int val) => ChildValue = val;
+    protected override void BuildRenderTree(Microsoft.AspNetCore.Components.Rendering.RenderTreeBuilder builder) { }
+}
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------

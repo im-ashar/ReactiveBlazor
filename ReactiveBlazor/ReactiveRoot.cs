@@ -28,6 +28,7 @@ public sealed class ReactiveRoot : ComponentBase
     public RenderFragment? ChildContent { get; set; }
 
     [Inject] internal IReactiveStateCodec Codec { get; set; } = default!;
+    [Inject] internal NavigationManager Navigation { get; set; } = default!;
 
     /// <inheritdoc />
     protected override void BuildRenderTree(RenderTreeBuilder builder)
@@ -39,8 +40,14 @@ public sealed class ReactiveRoot : ComponentBase
         builder.AddAttribute(2, "data-component", Owner.GetType().Name);
         builder.AddAttribute(3, "data-state", state);
 
-        if (!string.IsNullOrEmpty(Owner.RedirectUrl))
-            builder.AddAttribute(4, "data-redirect", Owner.RedirectUrl);
+        var redirectUrl = Owner.RedirectUrl;
+        if (string.IsNullOrEmpty(redirectUrl) && Navigation is ReactiveNavigationManager rnm)
+        {
+            redirectUrl = rnm.RedirectUri;
+        }
+
+        if (!string.IsNullOrEmpty(redirectUrl))
+            builder.AddAttribute(4, "data-redirect", redirectUrl);
 
         builder.AddContent(5, ChildContent);
         builder.CloseElement();

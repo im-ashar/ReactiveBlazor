@@ -133,34 +133,62 @@ public abstract class ReactiveComponent : ComponentBase
     private static readonly ConcurrentDictionary<(Type, string), MethodInfo?> ActionCache = new();
 
     /// <summary>
-    /// Returns the cached set of public read/write state properties for a reactive component type.
+    /// Returns the cached set of public read/write state properties for a reactive component type,
+    /// traversing the inheritance chain up to (but excluding) ReactiveComponent and ComponentBase.
     /// Properties decorated with <c>[Parameter]</c>, <c>[CascadingParameter]</c>,
     /// <c>[Inject]</c>, or <c>[ReactiveIgnore]</c> are excluded.
     /// </summary>
     internal static PropertyInfo[] StateProperties(Type t) =>
         StatePropsCache.GetOrAdd(t, static type =>
-            type.GetProperties(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly)
-                .Where(p => p.CanRead && p.CanWrite
-                    && p.GetCustomAttribute<ParameterAttribute>() is null
-                    && p.GetCustomAttribute<CascadingParameterAttribute>() is null
-                    && p.GetCustomAttribute<InjectAttribute>() is null
-                    && p.GetCustomAttribute<ReactiveIgnoreAttribute>() is null)
-                .ToArray());
+        {
+            var props = new List<PropertyInfo>();
+            var names = new HashSet<string>(StringComparer.Ordinal);
+            var current = type;
+            while (current != null && current != typeof(ReactiveComponent) && current != typeof(ComponentBase))
+            {
+                var declaredProps = current.GetProperties(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly)
+                    .Where(p => p.CanRead && p.CanWrite
+                        && p.GetCustomAttribute<ParameterAttribute>() is null
+                        && p.GetCustomAttribute<CascadingParameterAttribute>() is null
+                        && p.GetCustomAttribute<InjectAttribute>() is null
+                        && p.GetCustomAttribute<ReactiveIgnoreAttribute>() is null);
+                foreach (var p in declaredProps)
+                {
+                    if (names.Add(p.Name))
+                    {
+                        props.Add(p);
+                    }
+                }
+                current = current.BaseType;
+            }
+            return props.ToArray();
+        });
 
     private static MethodInfo? ResolveAction(Type type, string action) =>
         ActionCache.GetOrAdd((type, action), static key =>
-            key.Item1
-                .GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly)
-                .FirstOrDefault(m =>
-                    m.Name == key.Item2 &&
-                    m.GetCustomAttribute<ReactiveActionAttribute>() is not null &&
-                    !m.IsSpecialName));
+        {
+            var current = key.Item1;
+            while (current != null && current != typeof(ReactiveComponent) && current != typeof(ComponentBase))
+            {
+                var method = current.GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly)
+                    .FirstOrDefault(m =>
+                        m.Name == key.Item2 &&
+                        m.GetCustomAttribute<ReactiveActionAttribute>() is not null &&
+                        !m.IsSpecialName);
+                if (method != null)
+                    return method;
+                current = current.BaseType;
+            }
+            return null;
+        });
 
     private static object? ConvertBinding(JsonElement el, Type target)
     {
+        if (el.ValueKind == JsonValueKind.Null) return null;
         var s = el.ValueKind == JsonValueKind.String ? el.GetString() : el.GetRawText();
-        if (s is null) return null;
+        if (s is null || s == "null") return null;
         var nt = Nullable.GetUnderlyingType(target) ?? target;
+        if (Nullable.GetUnderlyingType(target) != null && string.IsNullOrWhiteSpace(s)) return null;
         if (nt == typeof(string)) return s;
         if (nt == typeof(bool)) return s is "true" or "True" or "on";
         if (nt.IsPrimitive || nt == typeof(decimal)) return Convert.ChangeType(s, nt);

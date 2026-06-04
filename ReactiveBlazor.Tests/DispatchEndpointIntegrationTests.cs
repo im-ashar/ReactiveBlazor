@@ -284,6 +284,23 @@ public class DispatchEndpointIntegrationTests : IAsyncDisposable
         // Check that sibling component is re-rendered but unchanged (Count 10)
         Assert.Contains("Count: 10", updates["sibling"]);
     }
+
+    [Fact]
+    public async Task Dispatch_NavigationManagerRedirect_ReturnsRedirectHtmlAttribute()
+    {
+        var stateJson = """{"Count":0,"ComponentId":"rtest_redirect"}""";
+        var token = _codec.Protect(typeof(IntegrationCounter), stateJson);
+
+        var request = CreateDispatchRequest(token, "RedirectViaNavigationManager");
+        var response = await _client.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var html = await response.Content.ReadAsStringAsync();
+
+        // The rendered HTML should contain data-redirect attribute pointing to our target
+        Assert.Contains("data-redirect", html);
+        Assert.Contains("http://localhost/target-page", html);
+    }
 }
 
 // ── Test component ──────────────────────────────────────────────────────────
@@ -295,18 +312,29 @@ public class IntegrationCounter : ReactiveComponent
 {
     public int Count { get; set; }
 
+    [Inject]
+    public NavigationManager NavigationManager { get; set; } = default!;
+
     [ReactiveAction]
     public void Increment() => Count++;
 
     [ReactiveAction]
     public void Add(int amount) => Count += amount;
 
+    [ReactiveAction]
+    public void RedirectViaNavigationManager()
+    {
+        NavigationManager.NavigateTo("http://localhost/target-page");
+    }
+
     protected override void BuildRenderTree(RenderTreeBuilder builder)
     {
-        builder.OpenElement(0, "div");
-        builder.AddAttribute(1, "data-component", "IntegrationCounter");
-        builder.AddAttribute(2, "data-state", "placeholder");
-        builder.AddContent(3, $"Count: {Count}");
-        builder.CloseElement();
+        builder.OpenComponent<ReactiveRoot>(0);
+        builder.AddAttribute(1, "Owner", this);
+        builder.AddAttribute(2, "ChildContent", (RenderFragment)(childBuilder =>
+        {
+            childBuilder.AddContent(3, $"Count: {Count}");
+        }));
+        builder.CloseComponent();
     }
 }

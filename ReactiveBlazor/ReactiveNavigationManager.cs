@@ -10,6 +10,8 @@ namespace ReactiveBlazor;
 /// </summary>
 internal sealed class ReactiveNavigationManager : NavigationManager
 {
+    public string? RedirectUri { get; private set; }
+
     public ReactiveNavigationManager(HttpContext context)
     {
         var request = context.Request;
@@ -21,8 +23,6 @@ internal sealed class ReactiveNavigationManager : NavigationManager
     /// <inheritdoc />
     protected override void NavigateToCore(string uri, NavigationOptions options)
     {
-        throw new InvalidOperationException(
-            "Client-side navigation is not available during reactive dispatch. " +
-            "Set the RedirectUrl property on your ReactiveComponent to redirect after an action.");
+        RedirectUri = uri;
     }
 }

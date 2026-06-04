@@ -97,11 +97,21 @@
     root = document.getElementById(root.id);
     if (!root) return;
 
+    // Collect all active components on the page
+    var components = [];
+    document.querySelectorAll("[data-component]").forEach(function (el) {
+      components.push({
+        id: el.id,
+        state: el.getAttribute("data-state")
+      });
+    });
+
     var body = JSON.stringify({
-      state: root.getAttribute("data-state"),
+      targetId: root.id,
       action: action || null,
       args: args || [],
-      bindings: collectBindings(root)
+      bindings: collectBindings(root),
+      components: components
     });
 
     root.setAttribute("data-reactive-busy", "");
@@ -121,38 +131,54 @@
         return;
       }
 
-      var html = (await res.text()).trim();
-      var tmp = document.createElement("template");
-      tmp.innerHTML = html;
+      var updates = await res.json();
+      var redirectUrl = null;
 
-      // Find the matching ReactiveRoot by its stable ID.
-      var incoming = tmp.content.querySelector("#" + CSS.escape(root.id))
-                  || tmp.content.querySelector("[data-component]")
-                  || tmp.content.firstElementChild;
-      if (!incoming) {
-        clearBusy(root);
-        return;
+      // Check for server-side redirects in any of the returned HTML components
+      for (var id in updates) {
+        var html = updates[id].trim();
+        var tmp = document.createElement("div");
+        tmp.innerHTML = html;
+        var incoming = tmp.firstElementChild;
+        if (incoming && incoming.getAttribute("data-redirect")) {
+          redirectUrl = incoming.getAttribute("data-redirect");
+          break;
+        }
       }
 
-      // Check for server-side redirect.
-      var redirectUrl = incoming.getAttribute("data-redirect");
       if (redirectUrl) {
         window.location.href = redirectUrl;
         return;
       }
 
-      // Morph the DOM using Idiomorph.
-      if (window.Idiomorph) {
-        Idiomorph.morph(root, incoming, { morphStyle: "outerHTML" });
-      } else {
-        root.replaceWith(incoming);
+      // Morph all updated components on the page
+      for (var id in updates) {
+        var target = document.getElementById(id);
+        if (!target) continue;
+
+        var html = updates[id].trim();
+        var tmp = document.createElement("div");
+        tmp.innerHTML = html;
+        var incoming = tmp.firstElementChild;
+        if (!incoming) continue;
+
+        if (window.Idiomorph) {
+          Idiomorph.morph(target, incoming, { morphStyle: "outerHTML" });
+        } else {
+          target.replaceWith(incoming);
+        }
+
+        var updated = document.getElementById(id);
+        if (updated) {
+          clearBusy(updated);
+          updated.dispatchEvent(new CustomEvent("reactive:updated", { bubbles: true }));
+        }
       }
 
-      // Clear busy on the (now-replaced) element.
-      var updated = document.getElementById(incoming.id || root.id);
-      if (updated) {
-        clearBusy(updated);
-        updated.dispatchEvent(new CustomEvent("reactive:updated", { bubbles: true }));
+      // Safeguard: Ensure busy state on the original target root is cleared
+      var finalRoot = document.getElementById(root.id);
+      if (finalRoot) {
+        clearBusy(finalRoot);
       }
     } catch (err) {
       console.error("ReactiveBlazor network error:", err);

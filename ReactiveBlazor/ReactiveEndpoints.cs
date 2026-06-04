@@ -63,8 +63,9 @@ public static class ReactiveServiceCollectionExtensions
 /// </summary>
 public static class ReactiveEndpointRouteBuilderExtensions
 {
+    private sealed record ComponentDto(string Id, string State);
     private sealed record DispatchRequest(
-        string State, string? Action, object?[]? Args, Dictionary<string, object?>? Bindings);
+        string TargetId, string? Action, object?[]? Args, Dictionary<string, object?>? Bindings, List<ComponentDto> Components);
 
     /// <summary>
     /// Wraps an existing service provider to substitute <see cref="NavigationManager"/>
@@ -115,69 +116,120 @@ public static class ReactiveEndpointRouteBuilderExtensions
             var req = await http.Request.ReadFromJsonAsync<DispatchRequest>(ct)
                       ?? throw new BadHttpRequestException("Empty dispatch body.");
 
-            if (string.IsNullOrEmpty(req.State))
+            if (string.IsNullOrEmpty(req.TargetId))
             {
-                logger.LogWarning("State token is null or empty.");
-                return Results.BadRequest("State token is missing.");
+                logger.LogWarning("TargetId is missing or empty.");
+                return Results.BadRequest("Target component ID is missing.");
             }
 
-            // --- Pre-decryption size check ---
-            if (req.State.Length > opts.MaxTokenBytes)
+            if (req.Components == null || req.Components.Count == 0)
             {
-                logger.LogWarning("Encrypted state token size {Size} bytes exceeds limit {Limit}.",
-                    req.State.Length, opts.MaxTokenBytes);
-                return Results.BadRequest("State token exceeds maximum allowed size.");
+                logger.LogWarning("No components provided in the dispatch request.");
+                return Results.BadRequest("Component list is empty.");
             }
 
-            // --- Unprotect and validate state ---
-            (Type type, string stateJson) stateResult;
-            try
+            // --- Validate and decrypt all components ---
+            var decryptedComponents = new List<(string Id, Type Type, string StateJson)>();
+            var targetComponentFound = false;
+
+            foreach (var comp in req.Components)
             {
-                stateResult = codec.Unprotect(req.State);
+                if (string.IsNullOrEmpty(comp.State))
+                {
+                    logger.LogWarning("State token for component {ComponentId} is missing.", comp.Id);
+                    return Results.BadRequest("State token is missing.");
+                }
+
+                if (comp.State.Length > opts.MaxTokenBytes)
+                {
+                    logger.LogWarning("Encrypted state token size {Size} bytes for component {ComponentId} exceeds limit {Limit}.",
+                        comp.State.Length, comp.Id, opts.MaxTokenBytes);
+                    return Results.BadRequest("State token exceeds maximum allowed size.");
+                }
+
+                Type type;
+                string stateJson;
+                try
+                {
+                    (type, stateJson) = codec.Unprotect(comp.State);
+                }
+                catch (Exception ex) when (ex is System.Security.Cryptography.CryptographicException
+                                                or InvalidOperationException)
+                {
+                    logger.LogWarning(ex, "State decryption/validation failed for component {ComponentId}.", comp.Id);
+                    return Results.BadRequest("Invalid or expired state. Please refresh the page.");
+                }
+
+                if (stateJson.Length > opts.MaxStateBytes)
+                {
+                    logger.LogWarning("State size {Size} bytes for component {ComponentId} exceeds limit {Limit}.",
+                        stateJson.Length, comp.Id, opts.MaxStateBytes);
+                    return Results.BadRequest("State exceeds maximum allowed size.");
+                }
+
+                decryptedComponents.Add((comp.Id, type, stateJson));
+
+                if (comp.Id == req.TargetId)
+                {
+                    targetComponentFound = true;
+                }
             }
-            catch (Exception ex) when (ex is System.Security.Cryptography.CryptographicException
-                                            or InvalidOperationException)
+
+            if (!targetComponentFound)
             {
-                logger.LogWarning(ex, "State decryption/validation failed.");
-                return Results.BadRequest("Invalid or expired state. Please refresh the page.");
+                logger.LogWarning("Target component {TargetId} not found in the list of components.", req.TargetId);
+                return Results.BadRequest("Target component not found.");
             }
 
-            var (type, stateJson) = stateResult;
-
-            if (stateJson.Length > opts.MaxStateBytes)
-            {
-                logger.LogWarning("State size {Size} bytes exceeds limit {Limit}.",
-                    stateJson.Length, opts.MaxStateBytes);
-                return Results.BadRequest("State exceeds maximum allowed size.");
-            }
-
-            logger.LogDebug("Dispatching action '{Action}' on component (state: {StateSize} bytes).",
-                req.Action ?? "(bind-only)", stateJson.Length);
-
-            // --- Render the component with restored state + action ---
+            // --- Render the components ---
             try
             {
                 ct.ThrowIfCancellationRequested();
                 var reactiveServices = new ReactiveServiceProvider(services, new ReactiveNavigationManager(http));
                 await using var renderer = new HtmlRenderer(reactiveServices, loggerFactory);
-                var html = await renderer.Dispatcher.InvokeAsync(async () =>
+                
+                var updates = await renderer.Dispatcher.InvokeAsync(async () =>
                 {
-                    var parameters = ParameterView.FromDictionary(new Dictionary<string, object?>
+                    var results = new Dictionary<string, string>();
+                    
+                    // 1. Render the target component first so its action runs and mutates state
+                    var targetComponent = decryptedComponents.First(c => c.Id == req.TargetId);
+                    logger.LogDebug("Dispatching action '{Action}' on target component {Type} (id: {Id}, state: {StateSize} bytes).",
+                        req.Action ?? "(bind-only)", targetComponent.Type.Name, targetComponent.Id, targetComponent.StateJson.Length);
+
+                    var targetParams = ParameterView.FromDictionary(new Dictionary<string, object?>
                     {
-                        ["ReactiveState"] = stateJson,
+                        ["ReactiveState"] = targetComponent.StateJson,
                         ["ReactiveAction"] = req.Action,
                         ["ReactiveArgs"] = req.Args is null ? null : JsonSerializer.Serialize(req.Args),
                         ["ReactiveBindings"] = req.Bindings is null ? null : JsonSerializer.Serialize(req.Bindings),
                     });
-                    var output = await renderer.RenderComponentAsync(type, parameters);
-                    return output.ToHtmlString();
+                    
+                    var targetOutput = await renderer.RenderComponentAsync(targetComponent.Type, targetParams);
+                    results[targetComponent.Id] = targetOutput.ToHtmlString();
+
+                    // 2. Render all other components to refresh their state against the updated system state
+                    foreach (var (id, type, stateJson) in decryptedComponents)
+                    {
+                        if (id == req.TargetId) continue;
+
+                        var siblingParams = ParameterView.FromDictionary(new Dictionary<string, object?>
+                        {
+                            ["ReactiveState"] = stateJson
+                        });
+                        
+                        var siblingOutput = await renderer.RenderComponentAsync(type, siblingParams);
+                        results[id] = siblingOutput.ToHtmlString();
+                    }
+                    
+                    return results;
                 });
 
-                return Results.Content(html, "text/html");
+                return Results.Json(updates);
             }
             catch (Exception ex) when (ex is InvalidOperationException or JsonException)
             {
-                logger.LogWarning(ex, "Action dispatch failed for component {Component}.", type.Name);
+                logger.LogWarning(ex, "Action dispatch failed.");
                 return Results.BadRequest("Action dispatch failed. The request may be invalid.");
             }
         });

@@ -93,7 +93,33 @@ public class DispatchEndpointIntegrationTests : IAsyncDisposable
 
     private HttpRequestMessage CreateDispatchRequest(string state, string? action, object?[]? args = null)
     {
-        var body = new { state, action, args, bindings = (object?)null };
+        var id = "rtest1";
+        if (!string.IsNullOrEmpty(state))
+        {
+            try
+            {
+                var (type, stateJson) = _codec.Unprotect(state);
+                using var doc = JsonDocument.Parse(stateJson);
+                id = doc.RootElement.TryGetProperty("ComponentId", out var idProp) ? idProp.GetString() ?? "rtest1" : "rtest1";
+            }
+            catch
+            {
+                // Ignore decryption errors for tampered state testing
+            }
+        }
+
+        var body = new
+        {
+            targetId = id,
+            action = action,
+            args = args,
+            bindings = (object?)null,
+            components = new[]
+            {
+                new { id = id, state = state }
+            }
+        };
+
         var request = new HttpRequestMessage(HttpMethod.Post, "/_reactive/dispatch")
         {
             Content = JsonContent.Create(body)
@@ -210,6 +236,53 @@ public class DispatchEndpointIntegrationTests : IAsyncDisposable
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
         var body = await response.Content.ReadAsStringAsync();
         Assert.Contains("State token is missing.", body);
+    }
+
+    // ── Multi-component OOB updates ───────────────────────────────────────
+
+    [Fact]
+    public async Task Dispatch_MultiComponent_RendersAllComponents()
+    {
+        var targetState = """{"Count":5,"ComponentId":"target"}""";
+        var siblingState = """{"Count":10,"ComponentId":"sibling"}""";
+        
+        var targetToken = _codec.Protect(typeof(IntegrationCounter), targetState);
+        var siblingToken = _codec.Protect(typeof(IntegrationCounter), siblingState);
+
+        var body = new
+        {
+            targetId = "target",
+            action = "Increment",
+            args = (object?[]?)null,
+            bindings = (object?)null,
+            components = new[]
+            {
+                new { id = "target", state = targetToken },
+                new { id = "sibling", state = siblingToken }
+            }
+        };
+
+        var request = new HttpRequestMessage(HttpMethod.Post, "/_reactive/dispatch")
+        {
+            Content = JsonContent.Create(body)
+        };
+        request.Headers.Add("RequestVerificationToken", _antiforgeryToken);
+        request.Headers.Add("Cookie", _antiforgeryCookie);
+
+        var response = await _client.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        
+        var updates = await response.Content.ReadFromJsonAsync<Dictionary<string, string>>();
+        Assert.NotNull(updates);
+        Assert.True(updates.ContainsKey("target"));
+        Assert.True(updates.ContainsKey("sibling"));
+
+        // Check that target component is updated (Count 5 -> 6)
+        Assert.Contains("Count: 6", updates["target"]);
+        
+        // Check that sibling component is re-rendered but unchanged (Count 10)
+        Assert.Contains("Count: 10", updates["sibling"]);
     }
 }
 

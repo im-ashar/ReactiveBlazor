@@ -136,22 +136,30 @@ public static class ReactiveEndpointRouteBuilderExtensions
                 req.Action ?? "(bind-only)", stateJson.Length);
 
             // --- Render the component with restored state + action ---
-            ct.ThrowIfCancellationRequested();
-            await using var renderer = new HtmlRenderer(services, loggerFactory);
-            var html = await renderer.Dispatcher.InvokeAsync(async () =>
+            try
             {
-                var parameters = ParameterView.FromDictionary(new Dictionary<string, object?>
+                ct.ThrowIfCancellationRequested();
+                await using var renderer = new HtmlRenderer(services, loggerFactory);
+                var html = await renderer.Dispatcher.InvokeAsync(async () =>
                 {
-                    ["ReactiveState"] = stateJson,
-                    ["ReactiveAction"] = req.Action,
-                    ["ReactiveArgs"] = req.Args is null ? null : JsonSerializer.Serialize(req.Args),
-                    ["ReactiveBindings"] = req.Bindings is null ? null : JsonSerializer.Serialize(req.Bindings),
+                    var parameters = ParameterView.FromDictionary(new Dictionary<string, object?>
+                    {
+                        ["ReactiveState"] = stateJson,
+                        ["ReactiveAction"] = req.Action,
+                        ["ReactiveArgs"] = req.Args is null ? null : JsonSerializer.Serialize(req.Args),
+                        ["ReactiveBindings"] = req.Bindings is null ? null : JsonSerializer.Serialize(req.Bindings),
+                    });
+                    var output = await renderer.RenderComponentAsync(type, parameters);
+                    return output.ToHtmlString();
                 });
-                var output = await renderer.RenderComponentAsync(type, parameters);
-                return output.ToHtmlString();
-            });
 
-            return Results.Content(html, "text/html");
+                return Results.Content(html, "text/html");
+            }
+            catch (Exception ex) when (ex is InvalidOperationException or JsonException)
+            {
+                logger.LogWarning(ex, "Action dispatch failed for component {Component}.", type.Name);
+                return Results.BadRequest("Action dispatch failed. The request may be invalid.");
+            }
         });
 
         return endpoints;

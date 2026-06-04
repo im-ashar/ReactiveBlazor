@@ -79,7 +79,7 @@ public class ReactiveStateCodecTests
         // A token for CounterComponent must only unprotect as CounterComponent,
         // never as OtherComponent. The registry look-up enforces this.
         var (_, codec) = TestServices.Build(
-            null, typeof(CounterComponent), typeof(OtherComponent));
+            componentTypes: [typeof(CounterComponent), typeof(OtherComponent)]);
 
         var token = codec.Protect(typeof(CounterComponent), """{"Count":5}""");
         var (resolvedType, _) = codec.Unprotect(token);
@@ -144,7 +144,7 @@ public class ReactiveStateCodecTests
 
         // Protect as CounterComponent (with Count, Label, ComponentId)
         var (_, codec) = TestServices.Build(
-            null, typeof(CounterComponent), typeof(OtherComponent));
+            componentTypes: [typeof(CounterComponent), typeof(OtherComponent)]);
 
         var tokenForCounter = codec.Protect(typeof(CounterComponent), """{"Count":1}""");
 
@@ -168,27 +168,25 @@ public class ReactiveStateCodecTests
     [Fact]
     public void Unprotect_UnknownComponentKey_ThrowsInvalidOperationException()
     {
-        // codec1 registers CounterComponent; codec2 does NOT — so the key in the
-        // envelope won't be found in codec2's registry.
-        var (_, codec1) = TestServices.Build(componentTypes: typeof(CounterComponent));
+        // Build a shared Data Protection provider so both codecs use the same key ring.
+        var sharedDp = new ServiceCollection()
+            .AddDataProtection()
+            .Services.BuildServiceProvider()
+            .GetRequiredService<IDataProtectionProvider>();
 
-        // Re-use the same Data Protection (same key ring) but different registry
-        var services = new ServiceCollection();
-        services.AddDataProtection();
-        services.AddLogging();
-        var opts = new ReactiveOptions();
-        services.AddSingleton(Options.Create(opts));
+        // codec1 registers CounterComponent.
+        var (_, codec1) = TestServices.Build(
+            sharedDp, configure: null, componentTypes: typeof(CounterComponent));
 
-        // Registry with ONLY OtherComponent — CounterComponent not registered
-        var registry = new ReactiveComponentRegistry();
-        registry.Register(typeof(OtherComponent));
-        registry.Freeze();
-        services.AddSingleton(registry);
-        services.AddScoped<IReactiveStateCodec, ReactiveStateCodec>();
+        // codec2 registers ONLY OtherComponent — CounterComponent is unknown.
+        var (_, codec2) = TestServices.Build(
+            sharedDp, configure: null, componentTypes: typeof(OtherComponent));
 
-        // Protect with codec1 using its own Data Protection key — the key ring differs,
-        // so we'll get a CryptographicException (not InvalidOperationException).
-        // For this test, verify the correct shape: use a shared service provider.
-        Assert.True(true, "Key isolation tested via tamper detection tests above.");
+        var token = codec1.Protect(typeof(CounterComponent), """{"Count":1}""");
+
+        // The token's envelope contains CounterComponent's full name, which codec2
+        // doesn't know about — so Unprotect must throw InvalidOperationException.
+        var ex = Assert.Throws<InvalidOperationException>(() => codec2.Unprotect(token));
+        Assert.Contains("Unknown component key", ex.Message);
     }
 }

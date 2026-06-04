@@ -56,11 +56,17 @@ internal static class TestServices
     /// containing only the supplied component types, and the given options.
     /// </summary>
     public static (IServiceProvider Services, ReactiveStateCodec Codec) Build(
+        IDataProtectionProvider? sharedDp = null,
         Action<ReactiveOptions>? configure = null,
         params Type[] componentTypes)
     {
         var services = new ServiceCollection();
-        services.AddDataProtection();
+
+        if (sharedDp is not null)
+            services.AddSingleton(sharedDp);
+        else
+            services.AddDataProtection();
+
         services.AddLogging();
 
         var opts = new ReactiveOptions();

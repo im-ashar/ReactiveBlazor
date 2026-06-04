@@ -333,6 +333,38 @@ public class ReactiveComponentStateTests
         InvokeApplyBindings(comp, "{\"NullableInt\":\"\"}");
         Assert.Null(comp.NullableInt);
     }
+
+    [Fact]
+    public void ApplyBindings_ComplexTypes_DecodesCorrectly()
+    {
+        var comp = new ComplexBindingComponent();
+        InvokeApplyBindings(comp, """{"Status":"Active","Id":"d3b07384-d113-4e42-990a-111111111111","CreatedAt":"2026-06-04T12:00:00Z"}""");
+        Assert.Equal(StatusEnum.Active, comp.Status);
+        Assert.Equal(Guid.Parse("d3b07384-d113-4e42-990a-111111111111"), comp.Id);
+        Assert.Equal(DateTime.Parse("2026-06-04T12:00:00Z").ToUniversalTime(), comp.CreatedAt.ToUniversalTime());
+    }
+
+    [Fact]
+    public void ApplyBindings_IsCaseInsensitive()
+    {
+        var comp = new CounterComponent { Label = "original" };
+        InvokeApplyBindings(comp, """{"label":"updated"}""");
+        Assert.Equal("updated", comp.Label);
+    }
+}
+
+public enum StatusEnum
+{
+    Inactive,
+    Active
+}
+
+public class ComplexBindingComponent : ReactiveComponent
+{
+    public StatusEnum Status { get; set; }
+    public Guid Id { get; set; }
+    public DateTime CreatedAt { get; set; }
+    protected override void BuildRenderTree(Microsoft.AspNetCore.Components.Rendering.RenderTreeBuilder builder) { }
 }
 
 // Extra helper component for bool binding test
@@ -347,3 +379,4 @@ public class NullablePrimitiveComponent : ReactiveComponent
     public int? NullableInt { get; set; }
     protected override void BuildRenderTree(Microsoft.AspNetCore.Components.Rendering.RenderTreeBuilder builder) { }
 }
+

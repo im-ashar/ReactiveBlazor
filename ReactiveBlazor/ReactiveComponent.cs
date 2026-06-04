@@ -108,8 +108,9 @@ public abstract class ReactiveComponent : ComponentBase
     {
         var doc = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(json, Json);
         if (doc is null) return;
+        var caseInsensitiveDoc = new Dictionary<string, JsonElement>(doc, StringComparer.OrdinalIgnoreCase);
         foreach (var p in StateProperties(GetType()))
-            if (doc.TryGetValue(p.Name, out var val))
+            if (caseInsensitiveDoc.TryGetValue(p.Name, out var val))
                 p.SetValue(this, ConvertBinding(val, p.PropertyType));
     }
 
@@ -192,7 +193,16 @@ public abstract class ReactiveComponent : ComponentBase
         if (nt == typeof(string)) return s;
         if (nt == typeof(bool)) return s is "true" or "True" or "on";
         if (nt.IsPrimitive || nt == typeof(decimal)) return Convert.ChangeType(s, nt);
-        return JsonSerializer.Deserialize(s, target, Json);
+        if (el.ValueKind == JsonValueKind.String)
+        {
+            if (nt.IsEnum) return Enum.Parse(nt, s, true);
+            if (nt == typeof(Guid)) return Guid.Parse(s);
+            if (nt == typeof(DateTime)) return DateTime.Parse(s, null, System.Globalization.DateTimeStyles.RoundtripKind);
+            if (nt == typeof(DateTimeOffset)) return DateTimeOffset.Parse(s, null, System.Globalization.DateTimeStyles.RoundtripKind);
+            if (nt == typeof(DateOnly)) return DateOnly.Parse(s);
+            if (nt == typeof(TimeOnly)) return TimeOnly.Parse(s);
+        }
+        return el.Deserialize(target, Json);
     }
 
     private static object?[] BindArgs(MethodInfo method, string? argsJson)

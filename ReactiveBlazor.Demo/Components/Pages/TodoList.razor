@@ -1,78 +1,88 @@
+@page "/todo"
 @inherits ReactiveBlazor.ReactiveComponent
 
+<PageTitle>Interactive Todo List - ReactiveBlazor Demo</PageTitle>
+
 <ReactiveRoot Owner="this">
-    <div class="card bg-base-100 shadow-md border border-base-300 h-full">
-        <div class="card-body">
-            <div class="flex items-center gap-2 mb-2">
-                <div class="badge badge-warning badge-outline">Todo</div>
-                <span class="text-xs text-base-content/50">data-on-click + data-bind + data-args</span>
+    <div class="space-y-6">
+        <!-- Page Header -->
+        <div class="flex flex-col md:flex-row md:items-center justify-between border-b border-base-300 pb-4 gap-4">
+            <div>
+                <h1 class="text-3xl font-bold text-base-content">Interactive Task Manager</h1>
+                <p class="text-sm text-base-content/60 mt-1">Manage complex arrays and serialized collections dynamically in C#.</p>
             </div>
-            <h2 class="card-title text-base-content">Interactive List</h2>
-            <p class="text-base-content/60 text-sm">
-                Add, complete, and remove items — all with server round-trips, zero WebAssembly.
-            </p>
-
-            <!-- Add form -->
-            <div class="flex gap-2 mt-4">
-                <input type="text"
-                       class="input input-bordered flex-1"
-                       placeholder="What needs to be done?"
-                       data-bind="NewItem"
-                       value="@NewItem" />
-                <button class="btn btn-warning" type="button" data-on-click="AddItem">
-                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4" /></svg>
-                    Add
-                </button>
+            <div class="badge badge-warning badge-outline font-semibold gap-2 py-3 px-4">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+                </svg>
+                Complex State Collection
             </div>
+        </div>
 
-            <!-- Todo list -->
-            @if (Items.Count > 0)
-            {
-                <ul class="space-y-2 mt-4">
-                    @for (var i = 0; i < Items.Count; i++)
-                    {
-                        var index = i;
-                        var item = Items[index];
-                        <li class="flex items-center gap-3 p-3 rounded-lg bg-base-200/50 group hover:bg-base-200 transition-colors">
-                            <button class="btn btn-circle btn-xs @(item.Done ? "btn-success" : "btn-ghost border-base-300")"
-                                    type="button"
-                                    data-on-click="ToggleItem"
-                                    data-args="@($"[{index}]")">
-                                @if (item.Done)
-                                {
-                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" /></svg>
-                                }
-                            </button>
-                            <span class="flex-1 @(item.Done ? "line-through text-base-content/40" : "text-base-content")">
-                                @item.Text
-                            </span>
-                            <button class="btn btn-ghost btn-xs text-error opacity-0 group-hover:opacity-100 transition-opacity"
-                                    type="button"
-                                    data-on-click="RemoveItem"
-                                    data-args="@($"[{index}]")">
-                                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
-                            </button>
-                        </li>
-                    }
-                </ul>
+        <div class="card bg-base-100 border border-base-300 shadow-sm max-w-xl mx-auto">
+            <div class="card-body p-6">
+                <!-- Add form -->
+                <div class="flex gap-2">
+                    <input type="text"
+                           class="input input-bordered flex-1"
+                           placeholder="What needs to be done?"
+                           data-bind="NewItem"
+                           value="@NewItem" />
+                    <button class="btn btn-warning gap-1" type="button" data-on-click="AddItem">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4" /></svg>
+                        Add
+                    </button>
+                </div>
 
-                <div class="flex items-center justify-between mt-4 text-xs text-base-content/50">
-                    <span>@Items.Count(i => !i.Done) remaining</span>
-                    @if (Items.Any(i => i.Done))
-                    {
-                        <button class="btn btn-ghost btn-xs" type="button" data-on-click="ClearCompleted">
-                            Clear completed
-                        </button>
-                    }
-                </div>
-            }
-            else
-            {
-                <div class="text-center py-8 text-base-content/30">
-                    <svg xmlns="http://www.w3.org/2000/svg" class="h-12 w-12 mx-auto mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" /></svg>
-                    <p>No items yet. Add one above!</p>
-                </div>
-            }
+                <!-- Todo list -->
+                @if (Items.Count > 0)
+                {
+                    <ul class="space-y-2 mt-4">
+                        @for (var i = 0; i < Items.Count; i++)
+                        {
+                            var index = i;
+                            var item = Items[index];
+                            <li class="flex items-center gap-3 p-3 rounded-lg bg-base-200/50 group hover:bg-base-200/80 transition-colors border border-base-300/30">
+                                <button class="btn btn-circle btn-xs @(item.Done ? "btn-success" : "btn-ghost border-base-300")"
+                                        type="button"
+                                        data-on-click="ToggleItem"
+                                        data-args="@($"[{index}]")">
+                                    @if (item.Done)
+                                    {
+                                        <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" /></svg>
+                                    }
+                                </button>
+                                <span class="flex-1 text-sm @(item.Done ? "line-through text-base-content/40" : "text-base-content font-medium")">
+                                    @item.Text
+                                </span>
+                                <button class="btn btn-ghost btn-xs text-error opacity-0 group-hover:opacity-100 transition-opacity"
+                                        type="button"
+                                        data-on-click="RemoveItem"
+                                        data-args="@($"[{index}]")">
+                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+                                </button>
+                            </li>
+                        }
+                    </ul>
+
+                    <div class="flex items-center justify-between mt-4 text-xs text-base-content/50 border-t border-base-200 pt-3">
+                        <span>@Items.Count(i => !i.Done) remaining</span>
+                        @if (Items.Any(i => i.Done))
+                        {
+                            <button class="btn btn-ghost btn-xs" type="button" data-on-click="ClearCompleted">
+                                Clear completed
+                            </button>
+                        }
+                    </div>
+                }
+                else
+                {
+                    <div class="text-center py-8 text-base-content/30 border border-dashed border-base-300 rounded-xl mt-4">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-12 w-12 mx-auto mb-2 text-base-content/20" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" /></svg>
+                        <p class="text-sm">No items yet. Add one above!</p>
+                    </div>
+                }
+            </div>
         </div>
     </div>
 </ReactiveRoot>

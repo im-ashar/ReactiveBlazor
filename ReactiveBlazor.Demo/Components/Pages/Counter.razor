@@ -1,0 +1,72 @@
+@page "/counter"
+@inherits ReactiveBlazor.ReactiveComponent
+
+<PageTitle>Stateful Counter - ReactiveBlazor Demo</PageTitle>
+
+<ReactiveRoot Owner="this">
+    <div class="space-y-6">
+        <!-- Page Header -->
+        <div class="flex flex-col md:flex-row md:items-center justify-between border-b border-base-300 pb-4 gap-4">
+            <div>
+                <h1 class="text-3xl font-bold text-base-content">Stateful Counter</h1>
+                <p class="text-sm text-base-content/60 mt-1">Simple numeric state and standard actions with event arguments.</p>
+            </div>
+            <div class="badge badge-primary badge-outline font-semibold gap-2 py-3 px-4">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M7 20l4-16m2 16l4-16M6 9h14M4 15h14" />
+                </svg>
+                Basic Actions Demo
+            </div>
+        </div>
+
+        <div class="card bg-base-100 border border-base-300 shadow-sm max-w-md mx-auto">
+            <div class="card-body p-6 flex flex-col items-center">
+                <div class="flex items-center gap-2 mb-2 self-start">
+                    <div class="badge badge-primary badge-outline">Counter State</div>
+                    <span class="text-xs text-base-content/50">data-on-click + data-args</span>
+                </div>
+                
+                <!-- Display Count -->
+                <div class="h-48 flex items-center justify-center">
+                    <div class="text-8xl font-black tabular-nums text-primary select-none drop-shadow">
+                        @Count
+                    </div>
+                </div>
+
+                <!-- Controls -->
+                <div class="flex gap-2 w-full justify-center flex-wrap mt-4">
+                    <button class="btn btn-outline btn-wide sm:btn-sm flex-1 max-w-[100px]" type="button" data-on-click="Decrement">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M20 12H4" /></svg>
+                        −1
+                    </button>
+                    <button class="btn btn-primary btn-wide sm:btn-sm flex-1 max-w-[100px]" type="button" data-on-click="Increment">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4" /></svg>
+                        +1
+                    </button>
+                    <button class="btn btn-secondary btn-wide sm:btn-sm flex-1 max-w-[100px]" type="button" data-on-click="Add" data-args="[5]">
+                        +5
+                    </button>
+                    <button class="btn btn-ghost btn-xs text-base-content/40 btn-block mt-4" type="button" data-on-click="Reset">
+                        Reset Counter
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</ReactiveRoot>
+
+@code {
+    public int Count { get; set; }
+
+    [ReactiveAction]
+    public void Increment() => Count++;
+
+    [ReactiveAction]
+    public void Decrement() => Count--;
+
+    [ReactiveAction]
+    public void Add(int amount) => Count += amount;
+
+    [ReactiveAction]
+    public void Reset() => Count = 0;
+}

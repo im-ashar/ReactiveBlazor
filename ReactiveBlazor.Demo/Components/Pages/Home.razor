@@ -1,119 +1,187 @@
 @page "/"
-@inherits ReactiveBlazor.ReactiveComponent
+@inherits Microsoft.AspNetCore.Components.ComponentBase
 
-<PageTitle>ReactiveBlazor Demo</PageTitle>
+<PageTitle>Overview - ReactiveBlazor Dashboard</PageTitle>
 
 <div class="space-y-8">
-    <!-- Hero Section -->
-    <div class="hero bg-gradient-to-br from-primary/10 via-base-100 to-secondary/10 rounded-2xl p-8 shadow-sm border border-base-300">
-        <div class="hero-content text-center">
-            <div class="max-w-2xl">
-                <h1 class="text-4xl font-bold bg-gradient-to-r from-primary to-secondary bg-clip-text text-transparent">
+    <!-- Hero / Welcome Banner -->
+    <div class="hero bg-gradient-to-br from-primary/10 via-base-100 to-secondary/10 rounded-2xl p-8 border border-base-300 shadow-sm">
+        <div class="hero-content text-center max-w-3xl mx-auto">
+            <div>
+                <h1 class="text-4xl font-extrabold bg-gradient-to-r from-primary to-secondary bg-clip-text text-transparent mb-4">
                     ReactiveBlazor
                 </h1>
-                <p class="py-4 text-base-content/70 text-lg">
+                <p class="text-base-content/75 text-lg leading-relaxed">
                     Stateful interactive components for Blazor Static SSR —
                     <span class="font-semibold text-base-content">no SignalR, no WebAssembly.</span>
-                    Every click dispatches a server round-trip via <code class="badge badge-ghost badge-sm">fetch</code>
-                    and the DOM is morphed with <code class="badge badge-ghost badge-sm">Idiomorph</code>.
+                    Enjoy near-zero client JS, encrypted state, anti-replay tokens, and automatic multi-component out-of-band updates using Idiomorph morphing.
                 </p>
+                <div class="mt-6 flex justify-center gap-3">
+                    <a href="/shop" class="btn btn-primary">Try Shop Demo</a>
+                    <a href="https://github.com/im-ashar/ReactiveBlazor" target="_blank" class="btn btn-outline">GitHub Repository</a>
+                </div>
             </div>
         </div>
     </div>
 
-    <!-- Demo Grid -->
-    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <!-- Counter Demo -->
-        <ReactiveRoot Owner="this">
-            <div class="card bg-base-100 shadow-md border border-base-300 h-full">
-                <div class="card-body">
-                    <div class="flex items-center gap-2 mb-2">
-                        <div class="badge badge-primary badge-outline">Counter</div>
-                        <span class="text-xs text-base-content/50">data-on-click + data-args</span>
-                    </div>
-                    <h2 class="card-title text-base-content">State & Actions</h2>
-                    <p class="text-base-content/60 text-sm">
-                        Public properties are state. Methods with <code class="text-primary">[ReactiveAction]</code> are callable from the client.
-                    </p>
+    <!-- Quick Stats Grid -->
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+        <div class="stat bg-base-100 border border-base-300 rounded-xl shadow-sm">
+            <div class="stat-title text-base-content/60">Client JS Size</div>
+            <div class="stat-value text-primary text-2xl font-black">~7.4 KB</div>
+            <div class="stat-desc text-base-content/40">Zero runtime dependencies</div>
+        </div>
+        <div class="stat bg-base-100 border border-base-300 rounded-xl shadow-sm">
+            <div class="stat-title text-base-content/60">State Encryption</div>
+            <div class="stat-value text-secondary text-2xl font-black">AES-256</div>
+            <div class="stat-desc text-base-content/40">ASP.NET Data Protection</div>
+        </div>
+        <div class="stat bg-base-100 border border-base-300 rounded-xl shadow-sm">
+            <div class="stat-title text-base-content/60">Interactivity</div>
+            <div class="stat-value text-success text-2xl font-black">AJAX HTTP</div>
+            <div class="stat-desc text-base-content/40">No WebSockets required</div>
+        </div>
+        <div class="stat bg-base-100 border border-base-300 rounded-xl shadow-sm">
+            <div class="stat-title text-base-content/60">DOM Morphing</div>
+            <div class="stat-value text-accent text-2xl font-black">Idiomorph</div>
+            <div class="stat-desc text-base-content/40">Preserves scroll, focus, transitions</div>
+        </div>
+    </div>
 
-                    <div class="flex items-center justify-center py-6">
-                        <div class="text-6xl font-bold tabular-nums text-primary transition-all">
-                            @Count
-                        </div>
-                    </div>
-
-                    <div class="flex gap-2 justify-center flex-wrap">
-                        <button class="btn btn-outline btn-sm" type="button" data-on-click="Decrement">
-                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M20 12H4" /></svg>
-                            −1
-                        </button>
-                        <button class="btn btn-primary btn-sm" type="button" data-on-click="Increment">
-                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4" /></svg>
-                            +1
-                        </button>
-                        <button class="btn btn-secondary btn-sm" type="button" data-on-click="Add" data-args="[5]">
-                            +5
-                        </button>
-                        <button class="btn btn-ghost btn-sm" type="button" data-on-click="Reset">
-                            Reset
-                        </button>
-                    </div>
+    <!-- Architecture Breakdown -->
+    <div class="card bg-base-100 border border-base-300 shadow-sm">
+        <div class="card-body p-6">
+            <h2 class="card-title text-xl font-bold mb-4 text-base-content">How It Works: The Lifecycle</h2>
+            
+            <div class="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-4 text-center text-xs mt-2">
+                <div class="flex flex-col items-center bg-base-200/50 p-4 rounded-xl border border-base-300/30">
+                    <span class="text-2xl mb-2">🖱️</span>
+                    <span class="font-bold text-base-content">1. Event Trigger</span>
+                    <span class="text-base-content/60 mt-1">User clicks elements with data-on-* attributes.</span>
+                </div>
+                
+                <div class="flex flex-col items-center bg-base-200/50 p-4 rounded-xl border border-base-300/30">
+                    <span class="text-2xl mb-2">📦</span>
+                    <span class="font-bold text-base-content">2. State Bundle</span>
+                    <span class="text-base-content/60 mt-1">Client JS scans active components and posts current state.</span>
+                </div>
+                
+                <div class="flex flex-col items-center bg-base-200/50 p-4 rounded-xl border border-base-300/30">
+                    <span class="text-2xl mb-2">🔑</span>
+                    <span class="font-bold text-base-content">3. Unprotect</span>
+                    <span class="text-base-content/60 mt-1">Server validates anti-forgery, decrypts, and verifies states.</span>
+                </div>
+                
+                <div class="flex flex-col items-center bg-base-200/50 p-4 rounded-xl border border-base-300/30">
+                    <span class="text-2xl mb-2">⚡</span>
+                    <span class="font-bold text-base-content">4. Dispatch</span>
+                    <span class="text-base-content/60 mt-1">Server executes target action method to mutate state.</span>
+                </div>
+                
+                <div class="flex flex-col items-center bg-base-200/50 p-4 rounded-xl border border-base-300/30">
+                    <span class="text-2xl mb-2">🖌️</span>
+                    <span class="font-bold text-base-content">5. Batch Render</span>
+                    <span class="text-base-content/60 mt-1">Server renders target and sibling components inside dispatcher.</span>
+                </div>
+                
+                <div class="flex flex-col items-center bg-base-200/50 p-4 rounded-xl border border-base-300/30">
+                    <span class="text-2xl mb-2">🔄</span>
+                    <span class="font-bold text-base-content">6. OOB Morph</span>
+                    <span class="text-base-content/60 mt-1">Client swaps and morphs DOM elements out-of-band.</span>
                 </div>
             </div>
-        </ReactiveRoot>
+        </div>
+    </div>
 
-        <!-- Item Picker Demo -->
-        <ItemPicker />
-
-        <!-- Todo List Demo -->
-        <TodoList />
-
-        <!-- Feature Highlights -->
-        <div class="card bg-base-100 shadow-md border border-base-300 h-full">
-            <div class="card-body">
-                <div class="flex items-center gap-2 mb-2">
-                    <div class="badge badge-accent badge-outline">Architecture</div>
+    <!-- Feature Showcase Grid -->
+    <div class="space-y-4">
+        <h2 class="text-2xl font-bold text-base-content">Feature Catalog</h2>
+        
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            <!-- Counter Card -->
+            <div class="card bg-base-100 border border-base-300 shadow-sm flex flex-col justify-between hover:shadow-md hover:border-primary/20 transition-all duration-300">
+                <div class="card-body p-6">
+                    <div class="flex items-center gap-2 mb-2">
+                        <span class="badge badge-sm badge-primary badge-outline">Actions</span>
+                        <span class="text-[10px] text-base-content/40">data-args</span>
+                    </div>
+                    <h3 class="card-title text-base font-bold text-base-content">Stateful Actions</h3>
+                    <p class="text-xs text-base-content/60 leading-relaxed mt-1">
+                        Methods decorated with <code class="text-primary">[ReactiveAction]</code> are invoked directly from C# via data attributes, passing primitive arguments cleanly.
+                    </p>
                 </div>
-                <h2 class="card-title text-base-content">How It Works</h2>
-                <ul class="space-y-3 text-sm text-base-content/70 mt-2">
-                    <li class="flex gap-3 items-start">
-                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-success shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-                        <span><strong class="text-base-content">Signed state</strong> — encrypted with Data Protection, tamper-proof</span>
-                    </li>
-                    <li class="flex gap-3 items-start">
-                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-success shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-                        <span><strong class="text-base-content">CSRF protected</strong> — antiforgery token validated on every request</span>
-                    </li>
-                    <li class="flex gap-3 items-start">
-                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-success shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-                        <span><strong class="text-base-content">Request queuing</strong> — rapid clicks are serialized, no race conditions</span>
-                    </li>
-                    <li class="flex gap-3 items-start">
-                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-success shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-                        <span><strong class="text-base-content">DOM morphing</strong> — Idiomorph preserves focus, scroll, and CSS transitions</span>
-                    </li>
-                    <li class="flex gap-3 items-start">
-                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-success shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-                        <span><strong class="text-base-content">~180 lines JS</strong> — zero dependencies, no build step required</span>
-                    </li>
-                </ul>
+                <div class="p-5 pt-0">
+                    <NavLink href="/counter" class="btn btn-primary btn-sm btn-block">Explore Counter</NavLink>
+                </div>
+            </div>
+
+            <!-- Bindings Card -->
+            <div class="card bg-base-100 border border-base-300 shadow-sm flex flex-col justify-between hover:shadow-md hover:border-primary/20 transition-all duration-300">
+                <div class="card-body p-6">
+                    <div class="flex items-center gap-2 mb-2">
+                        <span class="badge badge-sm badge-secondary badge-outline">Two-way</span>
+                        <span class="text-[10px] text-base-content/40">data-bind</span>
+                    </div>
+                    <h3 class="card-title text-base font-bold text-base-content">Two-Way Bindings</h3>
+                    <p class="text-xs text-base-content/60 leading-relaxed mt-1">
+                        Use <code class="text-secondary">data-bind</code> to sync dropdowns, inputs, checkboxes, and radios back to C# property states automatically.
+                    </p>
+                </div>
+                <div class="p-5 pt-0">
+                    <NavLink href="/picker" class="btn btn-secondary btn-sm btn-block">Explore Bindings</NavLink>
+                </div>
+            </div>
+
+            <!-- Todo Card -->
+            <div class="card bg-base-100 border border-base-300 shadow-sm flex flex-col justify-between hover:shadow-md hover:border-primary/20 transition-all duration-300">
+                <div class="card-body p-6">
+                    <div class="flex items-center gap-2 mb-2">
+                        <span class="badge badge-sm badge-warning badge-outline">Complex</span>
+                        <span class="text-[10px] text-base-content/40">List&lt;T&gt; state</span>
+                    </div>
+                    <h3 class="card-title text-base font-bold text-base-content">Complex Collections</h3>
+                    <p class="text-xs text-base-content/60 leading-relaxed mt-1">
+                        Supports serialization of complex data lists and generic sub-entities. The compiler signs and secures the nested object graph on every request.
+                    </p>
+                </div>
+                <div class="p-5 pt-0">
+                    <NavLink href="/todo" class="btn btn-warning btn-sm btn-block">Explore Task Manager</NavLink>
+                </div>
+            </div>
+
+            <!-- Debounce Card -->
+            <div class="card bg-base-100 border border-base-300 shadow-sm flex flex-col justify-between hover:shadow-md hover:border-primary/20 transition-all duration-300">
+                <div class="card-body p-6">
+                    <div class="flex items-center gap-2 mb-2">
+                        <span class="badge badge-sm badge-accent badge-outline">Optimization</span>
+                        <span class="text-[10px] text-base-content/40">data-debounce</span>
+                    </div>
+                    <h3 class="card-title text-base font-bold text-base-content">Input Debouncing</h3>
+                    <p class="text-xs text-base-content/60 leading-relaxed mt-1">
+                        Add <code class="text-accent">data-debounce="N"</code> on input fields to delay dispatches, avoiding overloading server resources when users type rapidly.
+                    </p>
+                </div>
+                <div class="p-5 pt-0">
+                    <NavLink href="/search" class="btn btn-accent btn-sm btn-block">Explore Live Search</NavLink>
+                </div>
+            </div>
+
+            <!-- OOB Card -->
+            <div class="card bg-base-100 border border-base-300 shadow-sm flex flex-col justify-between hover:shadow-md hover:border-primary/20 transition-all duration-300">
+                <div class="card-body p-6">
+                    <div class="flex items-center gap-2 mb-2">
+                        <span class="badge badge-sm badge-info badge-outline">OOB Swap</span>
+                        <span class="text-[10px] text-base-content/40">No-JS Glue</span>
+                    </div>
+                    <h3 class="card-title text-base font-bold text-base-content">Out-of-Band (OOB) Updates</h3>
+                    <p class="text-xs text-base-content/60 leading-relaxed mt-1">
+                        Updates to global state from an action automatically re-render and morph all other sibling components on the page in a single request.
+                    </p>
+                </div>
+                <div class="p-5 pt-0">
+                    <NavLink href="/shop" class="btn btn-info btn-sm btn-block">Explore OOB E-Commerce</NavLink>
+                </div>
             </div>
         </div>
     </div>
 </div>
-
-@code {
-    public int Count { get; set; }
-
-    [ReactiveAction]
-    public void Increment() => Count++;
-
-    [ReactiveAction]
-    public void Decrement() => Count--;
-
-    [ReactiveAction]
-    public void Add(int amount) => Count += amount;
-
-    [ReactiveAction]
-    public void Reset() => Count = 0;
-}

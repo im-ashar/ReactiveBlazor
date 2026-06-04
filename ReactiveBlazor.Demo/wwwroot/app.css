@@ -1,5 +1,6 @@
 @import "tailwindcss";
-
+@plugin "./daisyui.mjs";
+@source "../../**/*.razor";
 html, body {
     font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
 }

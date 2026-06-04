@@ -1,0 +1,169 @@
+@inherits ReactiveBlazor.ReactiveComponent
+@inject ReactiveBlazor.Demo.Services.CartService Cart
+
+<ReactiveRoot Owner="this">
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        <!-- Cart Items List -->
+        <div class="lg:col-span-2 space-y-4">
+            @if (Items.Count == 0)
+            {
+                <div class="card bg-base-100 border border-base-300 shadow-sm p-12 text-center">
+                    <div class="flex flex-col items-center max-w-md mx-auto">
+                        <div class="w-20 h-20 rounded-full bg-base-200 flex items-center justify-center text-base-content/30 mb-6">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-10 w-10" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z" />
+                            </svg>
+                        </div>
+                        <h3 class="text-xl font-bold mb-2">Your Cart is Empty</h3>
+                        <p class="text-base-content/60 mb-6 text-sm">
+                            Looks like you haven't added anything to your cart yet. Explore our developer gear catalog to find something awesome!
+                        </p>
+                        <a href="/" class="btn btn-primary btn-wide">Go to Catalog</a>
+                    </div>
+                </div>
+            }
+            else
+            {
+                <div class="card bg-base-100 border border-base-300 shadow-sm overflow-hidden">
+                    <div class="p-6 border-b border-base-200">
+                        <h3 class="font-bold text-lg">Shopping Cart (@Items.Sum(i => i.Quantity) items)</h3>
+                    </div>
+                    <div class="divide-y divide-base-200">
+                        @foreach (var item in Items)
+                        {
+                            <div class="p-6 flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between">
+                                <div class="flex gap-4 items-center">
+                                    <div class="w-20 h-20 rounded-lg overflow-hidden bg-base-200 border border-base-300 shrink-0">
+                                        <img src="@item.ImageUrl" alt="@item.ProductName" class="w-full h-full object-cover" />
+                                    </div>
+                                    <div>
+                                        <h4 class="font-semibold text-base text-base-content hover:text-primary transition-colors">@item.ProductName</h4>
+                                        <p class="text-sm text-base-content/50">Unit Price: @item.Price.ToString("C")</p>
+                                    </div>
+                                </div>
+                                <div class="flex items-center gap-6 w-full sm:w-auto justify-between sm:justify-end">
+                                    <div class="flex items-center border border-base-300 rounded-lg bg-base-100">
+                                        <button type="button"
+                                                class="btn btn-ghost btn-xs px-2 h-8 min-h-0"
+                                                data-on-click="DecrementQuantity"
+                                                data-args="@($"[{item.ProductId}]")">
+                                            −
+                                        </button>
+                                        <span class="w-10 text-center text-sm font-semibold tabular-nums">@item.Quantity</span>
+                                        <button type="button"
+                                                class="btn btn-ghost btn-xs px-2 h-8 min-h-0"
+                                                data-on-click="IncrementQuantity"
+                                                data-args="@($"[{item.ProductId}]")">
+                                            +
+                                        </button>
+                                    </div>
+                                    <div class="text-right shrink-0">
+                                        <span class="font-bold tabular-nums">@item.TotalPrice.ToString("C")</span>
+                                    </div>
+                                    <button type="button"
+                                            class="btn btn-ghost btn-sm btn-circle text-error hover:bg-error/10"
+                                            data-on-click="RemoveItem"
+                                            data-args="@($"[{item.ProductId}]")">
+                                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                                            <path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                        </svg>
+                                    </button>
+                                </div>
+                            </div>
+                        }
+                    </div>
+                </div>
+            }
+        </div>
+
+        <!-- Order Summary -->
+        <div>
+            <div class="card bg-base-100 border border-base-300 shadow-sm sticky top-4 p-6">
+                <h3 class="font-bold text-lg mb-4">Order Summary</h3>
+                <div class="space-y-3 text-sm">
+                    <div class="flex justify-between">
+                        <span class="text-base-content/60">Subtotal</span>
+                        <span class="font-semibold tabular-nums">@Subtotal.ToString("C")</span>
+                    </div>
+                    <div class="flex justify-between">
+                        <span class="text-base-content/60">Shipping</span>
+                        <span class="font-semibold text-success">@ShippingText</span>
+                    </div>
+                    <div class="flex justify-between">
+                        <span class="text-base-content/60">Tax (8.25%)</span>
+                        <span class="font-semibold tabular-nums">@Tax.ToString("C")</span>
+                    </div>
+                    <div class="border-t border-base-200 my-2 pt-3 flex justify-between text-base">
+                        <span class="font-bold">Total</span>
+                        <span class="font-bold text-primary tabular-nums">@Total.ToString("C")</span>
+                    </div>
+                </div>
+                <div class="mt-6">
+                    <button type="button" 
+                            class="btn btn-primary btn-block gap-2"
+                            disabled="@(Items.Count == 0)"
+                            data-on-click="Checkout">
+                        Proceed to Checkout
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</ReactiveRoot>
+
+@code {
+    public List<ReactiveBlazor.Demo.Models.CartItem> Items { get; set; } = [];
+    public decimal Subtotal { get; set; }
+    public decimal Tax => Subtotal * 0.0825m;
+    public decimal Shipping => Subtotal > 100m || Subtotal == 0m ? 0m : 9.99m;
+    public decimal Total => Subtotal + Tax + Shipping;
+
+    private string ShippingText => Subtotal == 0 ? "$0.00" : (Shipping == 0 ? "FREE" : Shipping.ToString("C"));
+
+    protected override void OnInitialized()
+    {
+        RefreshCartData();
+    }
+
+    private void RefreshCartData()
+    {
+        Items = Cart.GetCartItems();
+        Subtotal = Cart.GetSubtotal();
+    }
+
+    [ReactiveAction]
+    public void IncrementQuantity(int productId)
+    {
+        var item = Items.FirstOrDefault(i => i.ProductId == productId);
+        if (item is not null)
+        {
+            Cart.UpdateQuantity(productId, item.Quantity + 1);
+            RefreshCartData();
+        }
+    }
+
+    [ReactiveAction]
+    public void DecrementQuantity(int productId)
+    {
+        var item = Items.FirstOrDefault(i => i.ProductId == productId);
+        if (item is not null)
+        {
+            Cart.UpdateQuantity(productId, item.Quantity - 1);
+            RefreshCartData();
+        }
+    }
+
+    [ReactiveAction]
+    public void RemoveItem(int productId)
+    {
+        Cart.RemoveFromCart(productId);
+        RefreshCartData();
+    }
+
+    [ReactiveAction]
+    public void Checkout()
+    {
+        // Simple checkout redirect to home or thank you page
+        RedirectUrl = "/";
+    }
+}

@@ -1,0 +1,188 @@
+@page "/picker"
+@inherits ReactiveBlazor.ReactiveComponent
+
+<PageTitle>Two-Way Bindings Setup Builder - ReactiveBlazor Demo</PageTitle>
+
+<ReactiveRoot Owner="this">
+    <div class="space-y-6">
+        <!-- Page Header -->
+        <div class="flex flex-col md:flex-row md:items-center justify-between border-b border-base-300 pb-4 gap-4">
+            <div>
+                <h1 class="text-3xl font-bold text-base-content">Developer Setup Builder</h1>
+                <p class="text-sm text-base-content/60 mt-1">Configure your workspace. Inputs use <code class="text-primary">data-bind</code> to sync state with the server instantly.</p>
+            </div>
+            <div class="badge badge-secondary badge-outline font-semibold gap-2 py-3 px-4">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" />
+                </svg>
+                Two-Way Bindings
+            </div>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+            <!-- Configuration Inputs -->
+            <div class="lg:col-span-2 space-y-6">
+                <!-- Theme selection -->
+                <div class="card bg-base-100 border border-base-300 shadow-sm">
+                    <div class="card-body p-6 space-y-4">
+                        <h2 class="card-title text-base font-bold">1. Keyboard Theme</h2>
+                        <div class="form-control w-full">
+                            <select class="select select-bordered w-full" data-bind="KeyboardTheme" data-on-change>
+                                <option value="Classic">Classic Beige ($99)</option>
+                                <option value="Cyberpunk">Neon Cyberpunk ($129)</option>
+                                <option value="Forest">Forest Moss ($119)</option>
+                                <option value="Lavender">Lavender Pastel ($109)</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- OS selection -->
+                <div class="card bg-base-100 border border-base-300 shadow-sm">
+                    <div class="card-body p-6 space-y-4">
+                        <h2 class="card-title text-base font-bold">2. Operating System</h2>
+                        <div class="flex flex-col sm:flex-row gap-4">
+                            <label class="label cursor-pointer flex gap-3 p-3 rounded-lg border border-base-300 bg-base-200/20 hover:bg-base-200/50 flex-1">
+                                <input type="radio" name="os" value="Windows" class="radio radio-primary" data-bind="Os" checked="@(Os == "Windows")" data-on-change />
+                                <span class="label-text font-semibold flex-1">Windows 11 Pro</span>
+                            </label>
+                            <label class="label cursor-pointer flex gap-3 p-3 rounded-lg border border-base-300 bg-base-200/20 hover:bg-base-200/50 flex-1">
+                                <input type="radio" name="os" value="macOS" class="radio radio-primary" data-bind="Os" checked="@(Os == "macOS")" data-on-change />
+                                <span class="label-text font-semibold flex-1">macOS Sequoia</span>
+                            </label>
+                            <label class="label cursor-pointer flex gap-3 p-3 rounded-lg border border-base-300 bg-base-200/20 hover:bg-base-200/50 flex-1">
+                                <input type="radio" name="os" value="Linux" class="radio radio-primary" data-bind="Os" checked="@(Os == "Linux")" data-on-change />
+                                <span class="label-text font-semibold flex-1">Arch Linux</span>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Add-ons -->
+                <div class="card bg-base-100 border border-base-300 shadow-sm">
+                    <div class="card-body p-6 space-y-4">
+                        <h2 class="card-title text-base font-bold">3. Desk Add-ons</h2>
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <label class="label cursor-pointer flex gap-3 p-3 rounded-lg border border-base-300 bg-base-200/20 hover:bg-base-200/50">
+                                <input type="checkbox" class="checkbox checkbox-primary" data-bind="HasDualMonitors" checked="@HasDualMonitors" data-on-change />
+                                <span class="label-text flex-1 font-semibold">Dual Monitors (+$300)</span>
+                            </label>
+                            <label class="label cursor-pointer flex gap-3 p-3 rounded-lg border border-base-300 bg-base-200/20 hover:bg-base-200/50">
+                                <input type="checkbox" class="checkbox checkbox-primary" data-bind="HasStandingDesk" checked="@HasStandingDesk" data-on-change />
+                                <span class="label-text flex-1 font-semibold">Standing Desk (+$450)</span>
+                            </label>
+                            <label class="label cursor-pointer flex gap-3 p-3 rounded-lg border border-base-300 bg-base-200/20 hover:bg-base-200/50">
+                                <input type="checkbox" class="checkbox checkbox-primary" data-bind="HasRgbLighting" checked="@HasRgbLighting" data-on-change />
+                                <span class="label-text flex-1 font-semibold">RGB Ambient Lights (+$50)</span>
+                            </label>
+                            <label class="label cursor-pointer flex gap-3 p-3 rounded-lg border border-base-300 bg-base-200/20 hover:bg-base-200/50">
+                                <input type="checkbox" class="checkbox checkbox-primary" data-bind="HasCoffeeMachine" checked="@HasCoffeeMachine" data-on-change />
+                                <span class="label-text flex-1 font-semibold">Espresso Machine (+$250)</span>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Workspace Preview & Total -->
+            <div>
+                <div class="card bg-base-100 border border-base-300 shadow-sm sticky top-24 p-6 space-y-6">
+                    <h2 class="font-bold text-lg border-b border-base-200 pb-2">Workspace Review</h2>
+                    
+                    <div class="space-y-4">
+                        <!-- Visual mockup -->
+                        <div class="bg-base-300/40 p-4 rounded-xl text-center border border-base-300 min-h-36 flex flex-col justify-center items-center">
+                            <span class="text-3xl mb-2">💻</span>
+                            <div class="font-bold text-sm">@WorkspaceTitle</div>
+                            <div class="text-xs text-base-content/50 mt-1">@WorkspaceDetails</div>
+                        </div>
+
+                        <!-- Item list -->
+                        <div class="space-y-2 text-xs">
+                            <div class="flex justify-between">
+                                <span class="text-base-content/60">KeyboardTheme (@KeyboardTheme)</span>
+                                <span class="font-semibold tabular-nums">@KeyboardPrice.ToString("C")</span>
+                            </div>
+                            <div class="flex justify-between">
+                                <span class="text-base-content/60">OS (@Os)</span>
+                                <span class="font-semibold text-success">FREE</span>
+                            </div>
+                            @if (HasDualMonitors)
+                            {
+                                <div class="flex justify-between">
+                                    <span class="text-base-content/60">Dual Monitors</span>
+                                    <span class="font-semibold tabular-nums">$300.00</span>
+                                </div>
+                            }
+                            @if (HasStandingDesk)
+                            {
+                                <div class="flex justify-between">
+                                    <span class="text-base-content/60">Standing Desk</span>
+                                    <span class="font-semibold tabular-nums">$450.00</span>
+                                </div>
+                            }
+                            @if (HasRgbLighting)
+                            {
+                                <div class="flex justify-between">
+                                    <span class="text-base-content/60">RGB Ambient Lights</span>
+                                    <span class="font-semibold tabular-nums">$50.00</span>
+                                </div>
+                            }
+                            @if (HasCoffeeMachine)
+                            {
+                                <div class="flex justify-between">
+                                    <span class="text-base-content/60">Espresso Machine</span>
+                                    <span class="font-semibold tabular-nums">$250.00</span>
+                                </div>
+                            }
+                            <div class="border-t border-base-200 pt-3 flex justify-between text-base font-bold">
+                                <span>Estimated Price</span>
+                                <span class="text-primary tabular-nums">@TotalPrice.ToString("C")</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</ReactiveRoot>
+
+@code {
+    public string KeyboardTheme { get; set; } = "Classic";
+    public string Os { get; set; } = "Windows";
+    public bool HasDualMonitors { get; set; }
+    public bool HasStandingDesk { get; set; }
+    public bool HasRgbLighting { get; set; }
+    public bool HasCoffeeMachine { get; set; }
+
+    private decimal KeyboardPrice => KeyboardTheme switch
+    {
+        "Classic" => 99m,
+        "Cyberpunk" => 129m,
+        "Forest" => 119m,
+        "Lavender" => 109m,
+        _ => 99m
+    };
+
+    private decimal TotalPrice =>
+        KeyboardPrice +
+        (HasDualMonitors ? 300m : 0m) +
+        (HasStandingDesk ? 450m : 0m) +
+        (HasRgbLighting ? 50m : 0m) +
+        (HasCoffeeMachine ? 250m : 0m);
+
+    private string WorkspaceTitle => $"{Os} Workstation ({KeyboardTheme} Edition)";
+    
+    private string WorkspaceDetails
+    {
+        get
+        {
+            var addons = new List<string>();
+            if (HasDualMonitors) addons.Add("2x Monitors");
+            if (HasStandingDesk) addons.Add("Stand-desk");
+            if (HasRgbLighting) addons.Add("RGB");
+            if (HasCoffeeMachine) addons.Add("Coffee");
+            return addons.Count == 0 ? "Standard workstation layout" : string.Join(" + ", addons);
+        }
+    }
+}

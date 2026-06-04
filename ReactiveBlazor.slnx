@@ -1,0 +1,9 @@
+<Solution>
+  <Project Path="ReactiveBlazor/ReactiveBlazor.csproj" />
+  <Folder Name="/samples/">
+    <Project Path="ReactivBlazor.Demo/ReactiveBlazor.Demo.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="ReactiveBlazor.Tests/ReactiveBlazor.Tests.csproj" />
+  </Folder>
+</Solution>

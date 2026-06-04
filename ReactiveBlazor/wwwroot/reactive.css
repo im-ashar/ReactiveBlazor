@@ -1,0 +1,48 @@
+/*
+ * ReactiveBlazor default styles.
+ * Include in your app via:
+ *   <link rel="stylesheet" href="/_content/ReactiveBlazor/reactive.css" />
+ *
+ * Or use the data attributes and CSS classes in your own styles.
+ */
+
+/* ── Loading state ─────────────────────────────────────────────────────── */
+
+/*
+ * Applied automatically by reactive.js while a dispatch is in-flight.
+ * Reduces opacity and disables pointer events to prevent duplicate submissions.
+ */
+[data-reactive-busy] {
+    pointer-events: none;
+}
+
+.reactive-loading {
+    opacity: 0.6;
+    transition: opacity 150ms ease-in-out;
+}
+
+/*
+ * Optional: add a spinning indicator to any element with class "reactive-spinner"
+ * nested inside a busy component.
+ *
+ * Example:
+ *   <button data-on-click="Save">
+ *       <span class="reactive-spinner"></span> Save
+ *   </button>
+ */
+[data-reactive-busy] .reactive-spinner {
+    display: inline-block;
+    width: 1em;
+    height: 1em;
+    border: 2px solid currentColor;
+    border-right-color: transparent;
+    border-radius: 50%;
+    animation: reactive-spin 0.6s linear infinite;
+    vertical-align: middle;
+}
+
+@keyframes reactive-spin {
+    to {
+        transform: rotate(360deg);
+    }
+}

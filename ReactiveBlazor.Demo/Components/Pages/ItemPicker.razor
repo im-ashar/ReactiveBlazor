@@ -1,0 +1,45 @@
+@inherits ReactiveBlazor.ReactiveComponent
+
+<ReactiveRoot Owner="this">
+    <div class="card bg-base-100 shadow-md border border-base-300 h-full">
+        <div class="card-body">
+            <div class="flex items-center gap-2 mb-2">
+                <div class="badge badge-secondary badge-outline">Picker</div>
+                <span class="text-xs text-base-content/50">data-bind + data-on-change</span>
+            </div>
+            <h2 class="card-title text-base-content">Two-Way Binding</h2>
+            <p class="text-base-content/60 text-sm">
+                Use <code class="text-secondary">data-bind</code> to sync input values. The server re-renders with the new value.
+            </p>
+
+            <div class="form-control mt-4">
+                <label class="label">
+                    <span class="label-text font-medium">Pick a fruit</span>
+                </label>
+                <select class="select select-bordered w-full" data-bind="Selected" data-on-change>
+                    <option value="" disabled selected>Choose one…</option>
+                    @foreach (var fruit in Fruits)
+                    {
+                        <option value="@fruit" selected="@(fruit == Selected)">@fruit</option>
+                    }
+                </select>
+            </div>
+
+            @if (!string.IsNullOrEmpty(Selected))
+            {
+                <div class="alert bg-secondary/10 border-secondary/20 mt-4">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-secondary" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" /></svg>
+                    <span>You selected: <strong class="text-secondary">@Selected</strong></span>
+                </div>
+            }
+        </div>
+    </div>
+</ReactiveRoot>
+
+@code {
+    public string Selected { get; set; } = "";
+
+    // Static data — excluded from state serialization, rebuilt each render.
+    [ReactiveIgnore]
+    public string[] Fruits { get; set; } = ["Apple", "Banana", "Cherry", "Dragonfruit", "Elderberry"];
+}

@@ -5,10 +5,12 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <BlazorDisableThrowNavigationException>true</BlazorDisableThrowNavigationException>
+    <AssemblyName>ReactiveBlazor.Demo</AssemblyName>
+    <RootNamespace>ReactiveBlazor.Demo</RootNamespace>
   </PropertyGroup>
 
   <ItemGroup>
-    <Folder Include="Components\Shared\" />
+    <ProjectReference Include="..\ReactiveBlazor\ReactiveBlazor.csproj" />
   </ItemGroup>
 
 </Project>

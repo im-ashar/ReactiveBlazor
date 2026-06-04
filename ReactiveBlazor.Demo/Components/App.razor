@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ReactiveBlazor Demo</title>
+    <meta name="description" content="Interactive demo of ReactiveBlazor — stateful SSR components without SignalR or WebAssembly." />
+    <base href="/" />
+    <ResourcePreloader />
+    <link rel="stylesheet" href="@Assets["app.output.css"]" />
+    <link rel="stylesheet" href="@Assets["app.css"]" />
+    <link rel="stylesheet" href="@Assets["ReactiveBlazor.Demo.styles.css"]" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <ImportMap />
+    <link rel="icon" type="image/png" href="favicon.png" />
+    <HeadOutlet />
+    <ReactiveBlazor.ReactiveScripts ScriptPath="@Assets["_content/ReactiveBlazor/reactive.js"]" />
+</head>
+<body class="font-sans">
+    <Routes />
+    <script src="@Assets["_framework/blazor.web.js"]"></script>
+</body>
+</html>

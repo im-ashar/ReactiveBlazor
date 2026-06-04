@@ -1,4 +1,4 @@
-using BlazorTwCssTest.Components;
+using ReactiveBlazor.Demo.Components;
 using Microsoft.AspNetCore.DataProtection;
 using ReactiveBlazor;
 

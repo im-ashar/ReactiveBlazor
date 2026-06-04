@@ -67,6 +67,19 @@ public static class ReactiveEndpointRouteBuilderExtensions
         string State, string? Action, object?[]? Args, Dictionary<string, object?>? Bindings);
 
     /// <summary>
+    /// Wraps an existing service provider to substitute <see cref="NavigationManager"/>
+    /// with a properly initialized instance for reactive dispatch rendering.
+    /// Components like <c>NavLink</c> require <c>NavigationManager</c> to be initialized,
+    /// which does not happen when using <see cref="HtmlRenderer"/> directly.
+    /// </summary>
+    private sealed class ReactiveServiceProvider(IServiceProvider inner, NavigationManager navigationManager)
+        : IServiceProvider
+    {
+        public object? GetService(Type serviceType) =>
+            serviceType == typeof(NavigationManager) ? navigationManager : inner.GetService(serviceType);
+    }
+
+    /// <summary>
     /// Maps the endpoint the ReactiveBlazor JS runtime POSTs to.
     /// Call after <c>MapRazorComponents()</c>.
     /// </summary>
@@ -145,7 +158,8 @@ public static class ReactiveEndpointRouteBuilderExtensions
             try
             {
                 ct.ThrowIfCancellationRequested();
-                await using var renderer = new HtmlRenderer(services, loggerFactory);
+                var reactiveServices = new ReactiveServiceProvider(services, new ReactiveNavigationManager(http));
+                await using var renderer = new HtmlRenderer(reactiveServices, loggerFactory);
                 var html = await renderer.Dispatcher.InvokeAsync(async () =>
                 {
                     var parameters = ParameterView.FromDictionary(new Dictionary<string, object?>

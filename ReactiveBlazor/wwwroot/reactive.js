@@ -1,4 +1,4 @@
-// ReactiveBlazor client runtime v3.
+// ReactiveBlazor client runtime v1.0.0.
 // Handles: dispatch, request queuing, DOM morphing (Idiomorph), busy state,
 //          error handling, debounce, redirect, retry, and generic data-on-* events.
 //
@@ -263,6 +263,6 @@
       var root = rootOf(el) || el;
       dispatch(root, null, [], "latest");
     },
-    version: "3.0.0"
+    version: "1.0.0"
   };
 })();

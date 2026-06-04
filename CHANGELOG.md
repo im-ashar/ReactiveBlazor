@@ -5,6 +5,19 @@ All notable changes to ReactiveBlazor will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.0] — 2026-06-04
+
+### Added
+- **Multi-Component OOB Updates** — Automatic out-of-band updates. The server batch renders the target component and all sibling components on the page, and the client runtime morphs all matching elements dynamically.
+- **NavLink Isolation Support** — Resolved Isolated rendering context error by injecting a custom request-aware `NavigationManager` wrapper during dispatches.
+- **Robustness Check** — Added HTTP 400 Bad Request error response if the client sends a null or empty state token, preventing HTTP 500 crashes.
+- **Render Order Sequencing** — Ensured actions run and mutate shared state/services before sibling components are rendered.
+- **Interactive Dashboard Demos** — Refactored the entire demo into a responsive sidebar+header dashboard featuring individual pages for counter, two-way config builder, task manager, debounced live search, e-commerce catalog, and cart.
+
+### Changed
+- Changed JSON dispatch payload and response schema to support multi-component batches.
+- Updated integration tests to assert against the new JSON payload schema.
+
 ## [0.2.0] — 2026-06-03
 
 ### Added

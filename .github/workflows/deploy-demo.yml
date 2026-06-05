@@ -28,14 +28,42 @@ jobs:
       - name: Publish Demo Application
         run: dotnet publish ReactiveBlazor.Demo/ReactiveBlazor.Demo.csproj -c Release -o ./publish
 
+      - name: Take Application Offline
+        env:
+          SFTP_PASSWORD: ${{ secrets.MONSTERASP_FTP_PASSWORD }}
+          SFTP_USER: ${{ secrets.MONSTERASP_FTP_USERNAME }}
+          SFTP_HOST: ${{ secrets.MONSTERASP_FTP_SERVER }}
+          SFTP_DIR: ${{ secrets.MONSTERASP_FTP_SERVER_DIR || '/wwwroot' }}
+        run: |
+          sudo apt-get update && sudo apt-get install -y lftp
+          echo "<html><body><h2>Site offline for deployment. Please try again in a few moments.</h2></body></html>" > ./app_offline.htm
+          lftp -c "set sftp:auto-confirm yes; \
+                   open -u $SFTP_USER,$SFTP_PASSWORD sftp://$SFTP_HOST:22; \
+                   put -O $SFTP_DIR ./app_offline.htm"
+          sleep 5
+
       - name: Deploy via SFTP
-        uses: wlixcc/SFTP-Deploy-Action@v1.2.6
-        with:
-          server: ${{ secrets.MONSTERASP_FTP_SERVER }}
-          username: ${{ secrets.MONSTERASP_FTP_USERNAME }}
-          password: ${{ secrets.MONSTERASP_FTP_PASSWORD }}
-          port: 22
-          local_path: './publish/*'
-          remote_path: ${{ secrets.MONSTERASP_FTP_SERVER_DIR || '/wwwroot' }}
-          sftp_only: true
+        env:
+          SFTP_PASSWORD: ${{ secrets.MONSTERASP_FTP_PASSWORD }}
+          SFTP_USER: ${{ secrets.MONSTERASP_FTP_USERNAME }}
+          SFTP_HOST: ${{ secrets.MONSTERASP_FTP_SERVER }}
+          SFTP_DIR: ${{ secrets.MONSTERASP_FTP_SERVER_DIR || '/wwwroot' }}
+        run: |
+          lftp -c "set sftp:auto-confirm yes; \
+                   set mirror:set-permissions no; \
+                   open -u $SFTP_USER,$SFTP_PASSWORD sftp://$SFTP_HOST:22; \
+                   mirror -R --verbose ./publish/ $SFTP_DIR"
+
+      - name: Bring Application Online
+        if: always()
+        env:
+          SFTP_PASSWORD: ${{ secrets.MONSTERASP_FTP_PASSWORD }}
+          SFTP_USER: ${{ secrets.MONSTERASP_FTP_USERNAME }}
+          SFTP_HOST: ${{ secrets.MONSTERASP_FTP_SERVER }}
+          SFTP_DIR: ${{ secrets.MONSTERASP_FTP_SERVER_DIR || '/wwwroot' }}
+        run: |
+          lftp -c "set sftp:auto-confirm yes; \
+                   open -u $SFTP_USER,$SFTP_PASSWORD sftp://$SFTP_HOST:22; \
+                   rm -f $SFTP_DIR/app_offline.htm"
+
 

@@ -48,6 +48,11 @@ public abstract class ReactiveComponent : ComponentBase
     /// </summary>
     public string ComponentId { get; set; } = "";
 
+    [Inject]
+    private Microsoft.Extensions.Options.IOptions<ReactiveOptions>? Options { get; set; }
+
+    private bool RequireOptIn => Options?.Value?.RequireOptInState ?? false;
+
     /// <summary>
     /// When set to a URL by an action method, the client will navigate to that URL
     /// after the response is received instead of morphing the DOM.
@@ -87,7 +92,7 @@ public abstract class ReactiveComponent : ComponentBase
     internal string SerializeState()
     {
         var dict = new Dictionary<string, object?>();
-        foreach (var p in StateProperties(GetType()))
+        foreach (var p in StateProperties(GetType(), RequireOptIn))
             dict[p.Name] = p.GetValue(this);
         dict[nameof(ComponentId)] = ComponentId;
         return JsonSerializer.Serialize(dict, Json);
@@ -97,7 +102,7 @@ public abstract class ReactiveComponent : ComponentBase
     {
         var doc = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(json, Json);
         if (doc is null) return;
-        foreach (var p in StateProperties(GetType()))
+        foreach (var p in StateProperties(GetType(), RequireOptIn))
             if (doc.TryGetValue(p.Name, out var val))
                 p.SetValue(this, val.Deserialize(p.PropertyType, Json));
         if (doc.TryGetValue(nameof(ComponentId), out var id))
@@ -109,7 +114,7 @@ public abstract class ReactiveComponent : ComponentBase
         var doc = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(json, Json);
         if (doc is null) return;
         var caseInsensitiveDoc = new Dictionary<string, JsonElement>(doc, StringComparer.OrdinalIgnoreCase);
-        foreach (var p in StateProperties(GetType()))
+        foreach (var p in StateProperties(GetType(), RequireOptIn))
             if (caseInsensitiveDoc.TryGetValue(p.Name, out var val))
                 p.SetValue(this, ConvertBinding(val, p.PropertyType));
     }
@@ -130,7 +135,7 @@ public abstract class ReactiveComponent : ComponentBase
 
     // ---- Cached reflection helpers ----
 
-    private static readonly ConcurrentDictionary<Type, PropertyInfo[]> StatePropsCache = new();
+    private static readonly ConcurrentDictionary<(Type, bool), PropertyInfo[]> StatePropsCache = new();
     private static readonly ConcurrentDictionary<(Type, string), MethodInfo?> ActionCache = new();
 
     /// <summary>
@@ -138,10 +143,12 @@ public abstract class ReactiveComponent : ComponentBase
     /// traversing the inheritance chain up to (but excluding) ReactiveComponent and ComponentBase.
     /// Properties decorated with <c>[Parameter]</c>, <c>[CascadingParameter]</c>,
     /// <c>[Inject]</c>, or <c>[ReactiveIgnore]</c> are excluded.
+    /// If <paramref name="requireOptIn"/> is true, only properties with <see cref="ReactiveStateAttribute"/> are included.
     /// </summary>
-    internal static PropertyInfo[] StateProperties(Type t) =>
-        StatePropsCache.GetOrAdd(t, static type =>
+    internal static PropertyInfo[] StateProperties(Type t, bool requireOptIn = false) =>
+        StatePropsCache.GetOrAdd((t, requireOptIn), static key =>
         {
+            var (type, optIn) = key;
             var props = new List<PropertyInfo>();
             var names = new HashSet<string>(StringComparer.Ordinal);
             var current = type;
@@ -152,7 +159,8 @@ public abstract class ReactiveComponent : ComponentBase
                         && p.GetCustomAttribute<ParameterAttribute>() is null
                         && p.GetCustomAttribute<CascadingParameterAttribute>() is null
                         && p.GetCustomAttribute<InjectAttribute>() is null
-                        && p.GetCustomAttribute<ReactiveIgnoreAttribute>() is null);
+                        && p.GetCustomAttribute<ReactiveIgnoreAttribute>() is null
+                        && (!optIn || p.GetCustomAttribute<ReactiveStateAttribute>() is not null));
                 foreach (var p in declaredProps)
                 {
                     if (names.Add(p.Name))

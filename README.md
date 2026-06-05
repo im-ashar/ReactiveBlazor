@@ -11,7 +11,8 @@ ReactiveBlazor lets you build interactive server-rendered Blazor components that
 - **Zero client-side code required** — ~220 lines of vanilla JS inside the library, no developer-written JS or build steps needed.
 - **Multi-Component OOB Updates** — Actions that mutate shared state or DI services automatically re-render and morph all sibling components on the page in a single request.
 - **Signed & encrypted state** — Component state is protected with ASP.NET Data Protection to prevent tampering.
-- **Anti-replay protection** — State tokens expire after a configurable lifetime (default: 24 hours).
+- **Time-limited tokens** — State tokens expire after a configurable lifetime (default: 24 hours) to prevent stale submissions.
+- **One-Time Use Tokens (Anti-Replay)** — Nonce validation to protect non-idempotent actions from duplicate replay.
 - **CSRF protected** — Antiforgery tokens are automatically validated on every request.
 - **DOM morphing** — Idiomorph preserves focus, text selection, scroll position, and CSS transitions.
 - **Request queuing** — Rapid clicks or inputs are serialized per component to prevent race conditions.
@@ -162,6 +163,168 @@ Or write custom CSS rules:
     pointer-events: none;
     opacity: 0.6;
     transition: opacity 0.2s ease;
+}
+```
+
+---
+
+## Security Guidelines & Production Configuration
+
+### ⚠️ Production Data Protection Configuration
+By default, ASP.NET Core Data Protection uses an ephemeral in-memory key store or a local filesystem store. 
+
+> [!WARNING]
+> If your application restarts, runs inside transient containers (like Docker/Kubernetes), or is scaled horizontally behind a load balancer (High Availability), the keys used to encrypt state tokens will mismatch or be lost. This will result in immediate decryption failures (`400 Bad Request`) for your users.
+> 
+> **For single-server VM setups (surviving server restarts without external databases/caches):**
+> ```csharp
+> builder.Services.AddDataProtection()
+>     .PersistKeysToFileSystem(new DirectoryInfo(@"C:\app-keys\")) // Survives server restarts
+>     .ProtectKeysWithDpapi(); // Or DPAPI-NG / X.509 Certificate
+> ```
+> 
+> **For load-balanced, multi-instance, or container environments (HA):**
+> ```csharp
+> builder.Services.AddDataProtection()
+>     .PersistKeysToDbContext<MyDbContext>() // Or PersistKeysToStackExchangeRedis()
+>     .ProtectKeysWithAzureKeyVault(...); // Or ProtectKeysWithDpapi() / Certs
+> ```
+
+---
+
+### 🛡️ One-Time Use Tokens (Anti-Replay)
+For non-idempotent actions (like checkouts, processing payments, or adding database records), you can prevent users from resending/replaying the same interaction request within the token lifetime.
+
+Decorate your critical actions with `RequireOneTimeToken`:
+```csharp
+[ReactiveAction(RequireOneTimeToken = true)]
+public void ProcessPayment()
+{
+    // This action can only be invoked once per state token payload.
+}
+```
+
+#### Multi-Instance Nonce Store (e.g. Redis)
+By default, nonces are tracked in local memory. If you are running multiple instances of your application, you must replace the default in-memory store with a shared/distributed nonce store by implementing `IReactiveNonceStore`:
+
+```csharp
+public class RedisNonceStore : IReactiveNonceStore
+{
+    private readonly IDatabase _redis;
+    public RedisNonceStore(IConnectionMultiplexer redis) => _redis = redis.GetDatabase();
+
+    public bool TryConsume(string nonce, TimeSpan lifetime)
+    {
+        // Try to set the key in Redis with PX (expire) and NX (set if not exists)
+        return _redis.StringSet($"nonce:{nonce}", "used", lifetime, When.NotExists);
+    }
+}
+```
+And register it in your `Program.cs`:
+```csharp
+builder.Services.AddSingleton<IReactiveNonceStore, RedisNonceStore>();
+builder.Services.AddReactiveComponents(); // Will automatically skip registering the in-memory fallback
+```
+
+#### Single-Instance Persistent Nonce Store (e.g. SQLite)
+If you want one-time action tokens to survive server restarts on a single VM without deploying a Redis cache, you can implement a disk-backed store using a local SQLite database:
+
+```csharp
+using Microsoft.Data.Sqlite;
+
+public class SqliteNonceStore : IReactiveNonceStore
+{
+    private readonly string _connectionString = "Data Source=nonces.db";
+
+    public SqliteNonceStore()
+    {
+        using var connection = new SqliteConnection(_connectionString);
+        connection.Open();
+        var cmd = connection.CreateCommand();
+        cmd.CommandText = "CREATE TABLE IF NOT EXISTS ConsumedNonces (Nonce TEXT PRIMARY KEY, ExpiresAt DATETIME)";
+        cmd.ExecuteNonQuery();
+    }
+
+    public bool TryConsume(string nonce, TimeSpan lifetime)
+    {
+        using var connection = new SqliteConnection(_connectionString);
+        connection.Open();
+
+        // Cleanup expired nonces
+        var deleteCmd = connection.CreateCommand();
+        deleteCmd.CommandText = "DELETE FROM ConsumedNonces WHERE ExpiresAt < @now";
+        deleteCmd.Parameters.AddWithValue("@now", DateTime.UtcNow);
+        deleteCmd.ExecuteNonQuery();
+
+        // Insert new nonce
+        try
+        {
+            var insertCmd = connection.CreateCommand();
+            insertCmd.CommandText = "INSERT INTO ConsumedNonces (Nonce, ExpiresAt) VALUES (@nonce, @expires)";
+            insertCmd.Parameters.AddWithValue("@nonce", nonce);
+            insertCmd.Parameters.AddWithValue("@expires", DateTime.UtcNow.Add(lifetime));
+            insertCmd.ExecuteNonQuery();
+            return true;
+        }
+        catch (SqliteException) // Unique constraint violation (nonce already used)
+        {
+            return false;
+        }
+    }
+}
+```
+
+Register it in your `Program.cs`:
+```csharp
+builder.Services.AddSingleton<IReactiveNonceStore, SqliteNonceStore>();
+```
+
+---
+
+### 🔒 Actions are Public Endpoints
+Every public method marked with `[ReactiveAction]` is exposed as an endpoint that can be remotely invoked. 
+
+> [!IMPORTANT]
+> Do not rely on hiding buttons or elements in your Blazor markup to prevent users from executing actions. An attacker can easily read the state token from the DOM and fire a custom fetch POST request.
+> 
+> **You must perform all authorization, validation, and business rule checks inside the action method itself:**
+> ```csharp
+> [ReactiveAction]
+> public void DeleteRecord(int id)
+> {
+>     if (!User.IsInRole("Admin")) throw new UnauthorizedAccessException();
+>     // Delete code...
+> }
+> ```
+
+---
+
+### 🛡️ Opt-In State Serialization
+By default, ReactiveBlazor uses an **opt-out** model: all public read/write properties are automatically serialized into the state token unless they are decorated with `[ReactiveIgnore]`.
+
+To prevent accidental exposure of sensitive properties, you can switch to an **opt-in** model:
+
+1. Enable opt-in in registration options:
+```csharp
+builder.Services.AddReactiveComponents(options =>
+{
+    options.RequireOptInState = true;
+});
+```
+
+2. Explicitly decorate properties you want to serialize with `[ReactiveState]`:
+```csharp
+@inherits ReactiveBlazor.ReactiveComponent
+
+<ReactiveRoot Owner="this">
+    <p>User Profile for @Username</p>
+</ReactiveRoot>
+
+@code {
+    [ReactiveState]
+    public string Username { get; set; } // Will be serialized
+
+    public string PasswordHash { get; set; } // Ignored (will not be sent to client)
 }
 ```
 

@@ -19,4 +19,11 @@ namespace ReactiveBlazor;
 /// </example>
 /// </remarks>
 [AttributeUsage(AttributeTargets.Method, Inherited = false, AllowMultiple = false)]
-public sealed class ReactiveActionAttribute : Attribute;
+public sealed class ReactiveActionAttribute : Attribute
+{
+    /// <summary>
+    /// If set to <c>true</c>, requires a one-time token (nonce) to execute the action.
+    /// This prevents replay attacks on non-idempotent actions.
+    /// </summary>
+    public bool RequireOneTimeToken { get; set; } = false;
+}

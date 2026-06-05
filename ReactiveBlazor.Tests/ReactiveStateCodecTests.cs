@@ -21,7 +21,7 @@ public class ReactiveStateCodecTests
         var stateJson = """{"Count":42,"Label":"clicks","ComponentId":"rabc123"}""";
         var token = codec.Protect(typeof(CounterComponent), stateJson);
 
-        var (type, json) = codec.Unprotect(token);
+        var (type, json, _) = codec.Unprotect(token);
 
         Assert.Equal(typeof(CounterComponent), type);
         Assert.Equal(stateJson, json);
@@ -33,7 +33,7 @@ public class ReactiveStateCodecTests
         var (_, codec) = TestServices.Build(componentTypes: typeof(CounterComponent));
 
         var token = codec.Protect(typeof(CounterComponent), "{}");
-        var (type, json) = codec.Unprotect(token);
+        var (type, json, _) = codec.Unprotect(token);
 
         Assert.Equal(typeof(CounterComponent), type);
         Assert.Equal("{}", json);
@@ -82,7 +82,7 @@ public class ReactiveStateCodecTests
             componentTypes: [typeof(CounterComponent), typeof(OtherComponent)]);
 
         var token = codec.Protect(typeof(CounterComponent), """{"Count":5}""");
-        var (resolvedType, _) = codec.Unprotect(token);
+        var (resolvedType, _, _) = codec.Unprotect(token);
 
         Assert.Equal(typeof(CounterComponent), resolvedType);
         Assert.NotEqual(typeof(OtherComponent), resolvedType);
@@ -98,7 +98,7 @@ public class ReactiveStateCodecTests
             componentTypes: typeof(CounterComponent));
 
         var token = codec.Protect(typeof(CounterComponent), """{"Count":7}""");
-        var (_, json) = codec.Unprotect(token);
+        var (_, json, _) = codec.Unprotect(token);
 
         Assert.Equal("""{"Count":7}""", json);
     }
@@ -114,7 +114,7 @@ public class ReactiveStateCodecTests
         var token = codec.Protect(typeof(CounterComponent), """{"Count":42}""");
         System.Threading.Thread.Sleep(50); // ensure expiry
 
-        var (type, json) = codec.Unprotect(token);
+        var (type, json, _) = codec.Unprotect(token);
 
         Assert.Equal(typeof(CounterComponent), type);
         Assert.Equal("{}", json); // reset to defaults
@@ -128,7 +128,7 @@ public class ReactiveStateCodecTests
             componentTypes: typeof(CounterComponent));
 
         var token = codec.Protect(typeof(CounterComponent), """{"Count":99}""");
-        var (_, json) = codec.Unprotect(token);
+        var (_, json, _) = codec.Unprotect(token);
 
         Assert.Equal("""{"Count":99}""", json);
     }
@@ -159,7 +159,7 @@ public class ReactiveStateCodecTests
         // deliberately different shape — which we cannot do without source changes.
         //
         // Instead, test the observable contract: a token is valid when the shape matches.
-        var (_, json) = codec.Unprotect(tokenForCounter);
+        var (_, json, _) = codec.Unprotect(tokenForCounter);
         Assert.Equal("""{"Count":1}""", json);
     }
 
@@ -188,5 +188,59 @@ public class ReactiveStateCodecTests
         // doesn't know about — so Unprotect must throw InvalidOperationException.
         var ex = Assert.Throws<InvalidOperationException>(() => codec2.Unprotect(token));
         Assert.Contains("Unknown component key", ex.Message);
+    }
+
+    // ── Nonce & Replay protection tests ─────────────────────────────────────
+
+    [Fact]
+    public void ProtectUnprotect_RoundTrip_ExtractsNonce()
+    {
+        var (_, codec) = TestServices.Build(componentTypes: typeof(CounterComponent));
+        var stateJson = """{"Count":42,"ComponentId":"rabc123"}""";
+        var token = codec.Protect(typeof(CounterComponent), stateJson);
+
+        var (type, json, nonce) = codec.Unprotect(token);
+
+        Assert.Equal(typeof(CounterComponent), type);
+        Assert.Equal(stateJson, json);
+        Assert.False(string.IsNullOrEmpty(nonce));
+        // Verify it's a valid Guid format hex string
+        Assert.True(Guid.TryParseExact(nonce, "N", out _));
+    }
+
+    [Fact]
+    public void Protect_ProducesDifferentNonces()
+    {
+        var (_, codec) = TestServices.Build(componentTypes: typeof(CounterComponent));
+        var stateJson = """{"Count":0}""";
+
+        var t1 = codec.Protect(typeof(CounterComponent), stateJson);
+        var t2 = codec.Protect(typeof(CounterComponent), stateJson);
+
+        var (_, _, nonce1) = codec.Unprotect(t1);
+        var (_, _, nonce2) = codec.Unprotect(t2);
+
+        Assert.NotEqual(nonce1, nonce2);
+    }
+
+    // ── Opt-in State Serialization tests ────────────────────────────────────
+
+    [Fact]
+    public void StateProperties_WithOptIn_OnlyIncludesDecoratedProperties()
+    {
+        var props = ReactiveComponent.StateProperties(typeof(OptInStateComponent), requireOptIn: true);
+
+        Assert.Single(props);
+        Assert.Equal("SerializedValue", props[0].Name);
+    }
+
+    [Fact]
+    public void StateProperties_WithoutOptIn_IncludesAllPublicProperties()
+    {
+        var props = ReactiveComponent.StateProperties(typeof(OptInStateComponent), requireOptIn: false);
+
+        Assert.Equal(2, props.Length);
+        Assert.Contains(props, p => p.Name == "SerializedValue");
+        Assert.Contains(props, p => p.Name == "UnserializedValue");
     }
 }

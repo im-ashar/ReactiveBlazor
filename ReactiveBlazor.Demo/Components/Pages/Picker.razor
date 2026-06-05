@@ -28,10 +28,10 @@
                         <h2 class="card-title text-base font-bold">1. Keyboard Theme</h2>
                         <div class="form-control w-full">
                             <select class="select select-bordered w-full" data-bind="KeyboardTheme" data-on-change>
-                                <option value="Classic">Classic Beige ($99)</option>
-                                <option value="Cyberpunk">Neon Cyberpunk ($129)</option>
-                                <option value="Forest">Forest Moss ($119)</option>
-                                <option value="Lavender">Lavender Pastel ($109)</option>
+                                <option value="Classic" selected="@(KeyboardTheme == "Classic")">Classic Beige ($99)</option>
+                                <option value="Cyberpunk" selected="@(KeyboardTheme == "Cyberpunk")">Neon Cyberpunk ($129)</option>
+                                <option value="Forest" selected="@(KeyboardTheme == "Forest")">Forest Moss ($119)</option>
+                                <option value="Lavender" selected="@(KeyboardTheme == "Lavender")">Lavender Pastel ($109)</option>
                             </select>
                         </div>
                     </div>

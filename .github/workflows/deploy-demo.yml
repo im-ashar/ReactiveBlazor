@@ -63,7 +63,7 @@ jobs:
           lftp -c "set sftp:auto-confirm yes; \
                    set mirror:set-permissions no; \
                    open -u $SFTP_USER,$SFTP_PASSWORD sftp://$SFTP_HOST:22; \
-                   mirror -R --verbose . $SFTP_DIR"
+                   mirror -R --transfer-all --verbose . $SFTP_DIR"
 
       - name: Bring Application Online
         if: always()

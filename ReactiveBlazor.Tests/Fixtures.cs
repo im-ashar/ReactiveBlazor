@@ -45,6 +45,16 @@ public class OtherComponent : ReactiveComponent
     protected override void BuildRenderTree(Microsoft.AspNetCore.Components.Rendering.RenderTreeBuilder builder) { }
 }
 
+public class OptInStateComponent : ReactiveComponent
+{
+    [ReactiveState]
+    public int SerializedValue { get; set; } = 100;
+
+    public string UnserializedValue { get; set; } = "should not persist";
+
+    protected override void BuildRenderTree(Microsoft.AspNetCore.Components.Rendering.RenderTreeBuilder builder) { }
+}
+
 public class CustomBaseComponent : ReactiveComponent
 {
     public string BaseName { get; set; } = "base";

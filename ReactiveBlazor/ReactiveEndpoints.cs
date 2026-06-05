@@ -7,6 +7,7 @@ using Microsoft.AspNetCore.Components.Web;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -54,6 +55,7 @@ public static class ReactiveServiceCollectionExtensions
 
         services.AddSingleton(registry);
         services.AddScoped<IReactiveStateCodec, ReactiveStateCodec>();
+        services.TryAddSingleton<IReactiveNonceStore, InMemoryReactiveNonceStore>();
         return services;
     }
 }
@@ -129,7 +131,7 @@ public static class ReactiveEndpointRouteBuilderExtensions
             }
 
             // --- Validate and decrypt all components ---
-            var decryptedComponents = new List<(string Id, Type Type, string StateJson)>();
+            var decryptedComponents = new List<(string Id, Type Type, string StateJson, string Nonce)>();
             var targetComponentFound = false;
 
             foreach (var comp in req.Components)
@@ -149,9 +151,10 @@ public static class ReactiveEndpointRouteBuilderExtensions
 
                 Type type;
                 string stateJson;
+                string nonce;
                 try
                 {
-                    (type, stateJson) = codec.Unprotect(comp.State);
+                    (type, stateJson, nonce) = codec.Unprotect(comp.State);
                 }
                 catch (Exception ex) when (ex is System.Security.Cryptography.CryptographicException
                                                 or InvalidOperationException)
@@ -167,7 +170,7 @@ public static class ReactiveEndpointRouteBuilderExtensions
                     return Results.BadRequest("State exceeds maximum allowed size.");
                 }
 
-                decryptedComponents.Add((comp.Id, type, stateJson));
+                decryptedComponents.Add((comp.Id, type, stateJson, nonce));
 
                 if (comp.Id == req.TargetId)
                 {
@@ -179,6 +182,29 @@ public static class ReactiveEndpointRouteBuilderExtensions
             {
                 logger.LogWarning("Target component {TargetId} not found in the list of components.", req.TargetId);
                 return Results.BadRequest("Target component not found.");
+            }
+
+            // --- Replay check for target action ---
+            if (!string.IsNullOrEmpty(req.Action))
+            {
+                var targetCompData = decryptedComponents.First(c => c.Id == req.TargetId);
+                var method = targetCompData.Type.GetMethods(BindingFlags.Public | BindingFlags.Instance)
+                    .FirstOrDefault(m => m.Name == req.Action && m.GetCustomAttribute<ReactiveActionAttribute>() is not null);
+
+                if (method != null)
+                {
+                    var attr = method.GetCustomAttribute<ReactiveActionAttribute>();
+                    if (attr != null && attr.RequireOneTimeToken)
+                    {
+                        var nonceStore = http.RequestServices.GetRequiredService<IReactiveNonceStore>();
+                        var tokenLifetime = opts.StateTokenLifetime > TimeSpan.Zero ? opts.StateTokenLifetime : TimeSpan.FromHours(24);
+                        if (!nonceStore.TryConsume(targetCompData.Nonce, tokenLifetime))
+                        {
+                            logger.LogWarning("Action '{Action}' requires a one-time token, but nonce '{Nonce}' was already consumed (possible replay attack).", req.Action, targetCompData.Nonce);
+                            return Results.BadRequest("This request has already been processed.");
+                        }
+                    }
+                }
             }
 
             // --- Render the components ---
@@ -209,7 +235,7 @@ public static class ReactiveEndpointRouteBuilderExtensions
                     results[targetComponent.Id] = targetOutput.ToHtmlString();
 
                     // 2. Render all other components to refresh their state against the updated system state
-                    foreach (var (id, type, stateJson) in decryptedComponents)
+                    foreach (var (id, type, stateJson, _) in decryptedComponents)
                     {
                         if (id == req.TargetId) continue;
 

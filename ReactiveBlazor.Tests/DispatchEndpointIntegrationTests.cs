@@ -49,6 +49,7 @@ public class DispatchEndpointIntegrationTests : IAsyncDisposable
                     registry.Freeze();
                     services.AddSingleton(registry);
                     services.AddScoped<IReactiveStateCodec, ReactiveStateCodec>();
+                    services.AddSingleton<IReactiveNonceStore, InMemoryReactiveNonceStore>();
                 });
                 web.Configure(app =>
                 {
@@ -98,7 +99,7 @@ public class DispatchEndpointIntegrationTests : IAsyncDisposable
         {
             try
             {
-                var (type, stateJson) = _codec.Unprotect(state);
+                var (type, stateJson, _) = _codec.Unprotect(state);
                 using var doc = JsonDocument.Parse(stateJson);
                 id = doc.RootElement.TryGetProperty("ComponentId", out var idProp) ? idProp.GetString() ?? "rtest1" : "rtest1";
             }
@@ -301,6 +302,26 @@ public class DispatchEndpointIntegrationTests : IAsyncDisposable
         Assert.Contains("data-redirect", html);
         Assert.Contains("http://localhost/target-page", html);
     }
+
+    [Fact]
+    public async Task Dispatch_OneTimeTokenAction_SucceedsFirstTime_FailsSecondTime()
+    {
+        var stateJson = """{"Count":0,"ComponentId":"rtest_onetime"}""";
+        var token = _codec.Protect(typeof(IntegrationCounter), stateJson);
+
+        // First call should succeed
+        var request1 = CreateDispatchRequest(token, "ProcessCriticalAction");
+        var response1 = await _client.SendAsync(request1);
+        Assert.Equal(HttpStatusCode.OK, response1.StatusCode);
+
+        // Second call with the same token should fail due to replay prevention
+        var request2 = CreateDispatchRequest(token, "ProcessCriticalAction");
+        var response2 = await _client.SendAsync(request2);
+        Assert.Equal(HttpStatusCode.BadRequest, response2.StatusCode);
+
+        var errorBody = await response2.Content.ReadAsStringAsync();
+        Assert.Contains("This request has already been processed.", errorBody);
+    }
 }
 
 // ── Test component ──────────────────────────────────────────────────────────
@@ -325,6 +346,12 @@ public class IntegrationCounter : ReactiveComponent
     public void RedirectViaNavigationManager()
     {
         NavigationManager.NavigateTo("http://localhost/target-page");
+    }
+
+    [ReactiveAction(RequireOneTimeToken = true)]
+    public void ProcessCriticalAction()
+    {
+        Count += 10;
     }
 
     protected override void BuildRenderTree(RenderTreeBuilder builder)

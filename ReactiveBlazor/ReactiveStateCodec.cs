@@ -18,11 +18,11 @@ public interface IReactiveStateCodec
     string Protect(Type componentType, string stateJson);
 
     /// <summary>
-    /// Decrypts and verifies the state token, returning the component type and raw JSON.
+    /// Decrypts and verifies the state token, returning the component type, raw JSON, and the embedded nonce.
     /// If the state shape has changed since the token was issued (e.g. after a deployment),
     /// returns an empty JSON object (<c>{}</c>) so the component starts with default state.
     /// </summary>
-    (Type Type, string StateJson) Unprotect(string token);
+    (Type Type, string StateJson, string Nonce) Unprotect(string token);
 }
 
 internal sealed class ReactiveStateCodec : IReactiveStateCodec
@@ -32,8 +32,8 @@ internal sealed class ReactiveStateCodec : IReactiveStateCodec
     private readonly ILogger<ReactiveStateCodec> _logger;
     private readonly ReactiveOptions _options;
 
-    // Cache the hash per component type — it never changes at runtime.
-    private static readonly ConcurrentDictionary<Type, uint> StateHashCache = new();
+    // Cache the hash per component type and opt-in flag — it never changes at runtime.
+    private static readonly ConcurrentDictionary<(Type, bool), uint> StateHashCache = new();
 
     public ReactiveStateCodec(
         IDataProtectionProvider dp,
@@ -52,11 +52,12 @@ internal sealed class ReactiveStateCodec : IReactiveStateCodec
         var key = _registry.GetKey(componentType);
         var keyBytes = Encoding.UTF8.GetBytes(key);
         var stateBytes = Encoding.UTF8.GetBytes(stateJson);
-        var hash = ComputeStateHash(componentType);
+        var hash = ComputeStateHash(componentType, _options.RequireOptInState);
         var timestamp = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+        var nonceBytes = Guid.NewGuid().ToByteArray();
 
-        // Binary format: [4-byte key length (BE)][key bytes][4-byte state hash][8-byte timestamp (BE)][state bytes]
-        var payload = new byte[4 + keyBytes.Length + 4 + 8 + stateBytes.Length];
+        // Binary format: [4-byte key length (BE)][key bytes][4-byte state hash][8-byte timestamp (BE)][16-byte nonce][state bytes]
+        var payload = new byte[4 + keyBytes.Length + 4 + 8 + 16 + stateBytes.Length];
         var offset = 0;
 
         // Key length (4 bytes, big-endian)
@@ -85,13 +86,17 @@ internal sealed class ReactiveStateCodec : IReactiveStateCodec
         payload[offset++] = (byte)(timestamp >> 8);
         payload[offset++] = (byte)timestamp;
 
+        // Nonce bytes (16 bytes)
+        Buffer.BlockCopy(nonceBytes, 0, payload, offset, 16);
+        offset += 16;
+
         // State bytes
         Buffer.BlockCopy(stateBytes, 0, payload, offset, stateBytes.Length);
 
         return Convert.ToBase64String(_protector.Protect(payload));
     }
 
-    public (Type Type, string StateJson) Unprotect(string token)
+    public (Type Type, string StateJson, string Nonce) Unprotect(string token)
     {
         byte[] protectedBytes;
         try
@@ -106,13 +111,13 @@ internal sealed class ReactiveStateCodec : IReactiveStateCodec
         // Throws CryptographicException if the payload was tampered with.
         var payload = _protector.Unprotect(protectedBytes);
 
-        // Minimum: 4 (key len) + 1 (key) + 4 (hash) + 8 (timestamp) = 17
-        if (payload.Length < 17)
+        // Minimum: 4 (key len) + 1 (key) + 4 (hash) + 8 (timestamp) + 16 (nonce) = 33
+        if (payload.Length < 33)
             throw new InvalidOperationException("Malformed state envelope: too short.");
 
         // Read key length
         var keyLength = (payload[0] << 24) | (payload[1] << 16) | (payload[2] << 8) | payload[3];
-        if (keyLength < 0 || 4 + keyLength + 4 + 8 > payload.Length)
+        if (keyLength < 0 || 4 + keyLength + 4 + 8 + 16 > payload.Length)
             throw new InvalidOperationException("Malformed state envelope: invalid key length.");
 
         var key = Encoding.UTF8.GetString(payload, 4, keyLength);
@@ -137,6 +142,12 @@ internal sealed class ReactiveStateCodec : IReactiveStateCodec
                              ((long)payload[tsOffset + 6] << 8) |
                              payload[tsOffset + 7];
 
+        // Read 16-byte Nonce
+        var nonceOffset = tsOffset + 8;
+        var nonceBytes = new byte[16];
+        Buffer.BlockCopy(payload, nonceOffset, nonceBytes, 0, 16);
+        var nonce = new Guid(nonceBytes).ToString("N");
+
         // Check token expiration (if lifetime is configured).
         if (_options.StateTokenLifetime > TimeSpan.Zero)
         {
@@ -147,11 +158,11 @@ internal sealed class ReactiveStateCodec : IReactiveStateCodec
                 _logger.LogWarning(
                     "State token for {Component} expired (age: {Age}, limit: {Limit}). Resetting to default state.",
                     type.Name, age, _options.StateTokenLifetime);
-                return (type, "{}");
+                return (type, "{}", nonce);
             }
         }
 
-        var currentHash = ComputeStateHash(type);
+        var currentHash = ComputeStateHash(type, _options.RequireOptInState);
 
         // If the hash doesn't match, the component's state shape changed since this token
         // was issued (e.g. after a deployment). Return empty state so the component resets
@@ -161,21 +172,22 @@ internal sealed class ReactiveStateCodec : IReactiveStateCodec
             _logger.LogInformation(
                 "State shape mismatch for {Component} (stored hash {Stored:X8}, current {Current:X8}). Resetting to default state.",
                 type.Name, storedHash, currentHash);
-            return (type, "{}");
+            return (type, "{}", nonce);
         }
 
-        var stateJson = Encoding.UTF8.GetString(payload, tsOffset + 8, payload.Length - tsOffset - 8);
-        return (type, stateJson);
+        var stateJson = Encoding.UTF8.GetString(payload, nonceOffset + 16, payload.Length - nonceOffset - 16);
+        return (type, stateJson, nonce);
     }
 
     /// <summary>
     /// Computes a stable hash from the component's state property names and types.
     /// Changes when properties are added, removed, renamed, or change type.
     /// </summary>
-    private static uint ComputeStateHash(Type componentType) =>
-        StateHashCache.GetOrAdd(componentType, static t =>
+    private static uint ComputeStateHash(Type componentType, bool requireOptIn) =>
+        StateHashCache.GetOrAdd((componentType, requireOptIn), static key =>
         {
-            var props = ReactiveComponent.StateProperties(t);
+            var (t, optIn) = key;
+            var props = ReactiveComponent.StateProperties(t, optIn);
             var sb = new StringBuilder();
             foreach (var p in props.OrderBy(p => p.Name, StringComparer.Ordinal))
             {

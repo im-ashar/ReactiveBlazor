@@ -35,4 +35,12 @@ public sealed class ReactiveOptions
     /// Default: <c>/_reactive/dispatch</c>.
     /// </summary>
     public string DispatchPath { get; set; } = "/_reactive/dispatch";
+
+    /// <summary>
+    /// If set to <c>true</c>, only public read/write properties decorated with <see cref="ReactiveStateAttribute"/>
+    /// are serialized and round-tripped as component state. Properties without the attribute are ignored.
+    /// If <c>false</c>, all public read/write properties are serialized unless explicitly ignored.
+    /// Default: <c>false</c> (opt-out model).
+    /// </summary>
+    public bool RequireOptInState { get; set; } = false;
 }

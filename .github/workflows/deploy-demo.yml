@@ -28,12 +28,14 @@ jobs:
       - name: Publish Demo Application
         run: dotnet publish ReactiveBlazor.Demo/ReactiveBlazor.Demo.csproj -c Release -o ./publish
 
-      - name: Deploy via FTP
-        uses: SamKirkland/FTP-Deploy-Action@v4.3.5
+      - name: Deploy via SFTP
+        uses: wlixcc/SFTP-Deploy-Action@v1.2.6
         with:
           server: ${{ secrets.MONSTERASP_FTP_SERVER }}
           username: ${{ secrets.MONSTERASP_FTP_USERNAME }}
           password: ${{ secrets.MONSTERASP_FTP_PASSWORD }}
-          local-dir: ./publish/
-          server-dir: ${{ secrets.MONSTERASP_FTP_SERVER_DIR || '/wwwroot' }}
-          state-name: .ftp-deploy-sync-state.json
+          port: 22
+          local_path: './publish/*'
+          remote_path: ${{ secrets.MONSTERASP_FTP_SERVER_DIR || '/wwwroot' }}
+          sftp_only: true
+

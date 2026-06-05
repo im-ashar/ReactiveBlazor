@@ -1,0 +1,39 @@
+name: Deploy Demo to MonsterASP
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-deploy:
+    name: Build & Deploy Demo
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Restore Dependencies
+        run: dotnet restore
+
+      - name: Publish Demo Application
+        run: dotnet publish ReactiveBlazor.Demo/ReactiveBlazor.Demo.csproj -c Release -o ./publish
+
+      - name: Deploy via FTP
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.5
+        with:
+          server: ${{ secrets.MONSTERASP_FTP_SERVER }}
+          username: ${{ secrets.MONSTERASP_FTP_USERNAME }}
+          password: ${{ secrets.MONSTERASP_FTP_PASSWORD }}
+          local-dir: ./publish/
+          server-dir: ${{ secrets.MONSTERASP_FTP_SERVER_DIR || '/wwwroot' }}
+          state-name: .ftp-deploy-sync-state.json

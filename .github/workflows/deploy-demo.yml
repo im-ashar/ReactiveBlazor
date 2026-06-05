@@ -31,7 +31,9 @@ jobs:
         run: dotnet restore
 
       - name: Build Tailwind CSS
-        run: npx @tailwindcss/cli -i ReactiveBlazor.Demo/wwwroot/app.css -o ReactiveBlazor.Demo/wwwroot/app.output.css --minify
+        run: |
+          npm install tailwindcss @tailwindcss/cli
+          npx @tailwindcss/cli -i ReactiveBlazor.Demo/wwwroot/app.css -o ReactiveBlazor.Demo/wwwroot/app.output.css --minify
 
       - name: Publish Demo Application
         run: dotnet publish ReactiveBlazor.Demo/ReactiveBlazor.Demo.csproj -c Release -o ./publish
@@ -71,6 +73,9 @@ jobs:
           SFTP_HOST: ${{ secrets.MONSTERASP_FTP_SERVER }}
           SFTP_DIR: ${{ secrets.MONSTERASP_FTP_SERVER_DIR || '/wwwroot' }}
         run: |
+          if ! command -v lftp &> /dev/null; then
+            sudo apt-get update && sudo apt-get install -y lftp
+          fi
           lftp -c "set sftp:auto-confirm yes; \
                    open -u $SFTP_USER,$SFTP_PASSWORD sftp://$SFTP_HOST:22; \
                    rm -f $SFTP_DIR/app_offline.htm"

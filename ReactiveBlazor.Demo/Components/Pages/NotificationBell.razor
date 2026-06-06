@@ -1,0 +1,67 @@
+@inherits ReactiveBlazor.ReactiveComponent
+@attribute [OnReactiveSignal<NotificationAdded>]
+@attribute [OnReactiveSignal<NotificationRead>]
+@attribute [OnReactiveSignal<NotificationsCleared>]
+@inject ReactiveBlazor.Demo.Services.NotificationService Notifications
+
+<ReactiveRoot Owner="this">
+    <div class="card bg-base-100 border border-primary/40 shadow-sm">
+        <div class="card-body p-5">
+            <div class="flex items-center justify-between">
+                <div>
+                    <h3 class="font-bold text-base">Bell</h3>
+                    <p class="text-[11px] text-base-content/50 font-mono mt-0.5">
+                        subscribes: Added, Read, Cleared
+                    </p>
+                </div>
+                <div class="indicator">
+                    <span class="indicator-item badge badge-primary badge-sm">@UnreadCount</span>
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 text-base-content/70" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
+                    </svg>
+                </div>
+            </div>
+
+            @* Toast surfaces the payload received from the last NotificationAdded signal *@
+            @if (LastToast is not null)
+            {
+                <div class="alert alert-@LastToast.Level mt-3 py-2 text-xs">
+                    <span>
+                        <span class="font-mono">#@LastToast.Id</span>
+                        <span class="badge badge-xs ml-1">@LastToast.Level</span>
+                        consumed payload from <code>NotificationAdded</code>
+                    </span>
+                </div>
+            }
+
+            <div class="mt-3 text-[11px] text-base-content/50 font-mono border-t border-base-300 pt-2">
+                Total: <span class="text-base-content/80">@TotalCount</span>
+                · Rendered: <span class="text-success">@RenderedAt</span>
+            </div>
+        </div>
+    </div>
+</ReactiveRoot>
+
+@code {
+    public int UnreadCount { get; set; }
+    public int TotalCount { get; set; }
+    public string RenderedAt { get; set; } = "";
+    public NotificationAdded? LastToast { get; set; }
+
+    protected override void OnInitialized()
+    {
+        // Refresh from the source of truth — always.
+        UnreadCount = Notifications.UnreadCount();
+        TotalCount = Notifications.GetAll().Count;
+        RenderedAt = DateTime.Now.ToString("HH:mm:ss.fff");
+
+        // Consume payloads published during this dispatch (if any).
+        // If multiple NotificationAdded signals were published in one action, we keep the last.
+        foreach (var added in ReactiveSignals.GetPublished<NotificationAdded>())
+            LastToast = added;
+
+        if (ReactiveSignals.WasPublished<NotificationsCleared>())
+            LastToast = null;
+    }
+}
+

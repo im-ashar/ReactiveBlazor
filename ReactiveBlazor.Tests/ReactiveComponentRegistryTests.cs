@@ -94,4 +94,76 @@ public class ReactiveComponentRegistryTests
             Assert.Equal(typeof(CounterComponent), t);
         });
     }
+
+    // ── Signal subscriptions ──────────────────────────────────────────────
+
+    [Fact]
+    public void GetSubscribers_UnknownSignalType_ReturnsEmpty()
+    {
+        var registry = new ReactiveComponentRegistry();
+        registry.Freeze();
+
+        Assert.Empty(registry.GetSubscribers(typeof(TestSignalAlpha)));
+    }
+
+    [Fact]
+    public void Register_RecordsGenericAttributeSubscription()
+    {
+        var registry = new ReactiveComponentRegistry();
+        registry.Register(typeof(SubscribesToAlpha));
+        registry.Freeze();
+
+        Assert.Contains(typeof(SubscribesToAlpha), registry.GetSubscribers(typeof(TestSignalAlpha)));
+    }
+
+    [Fact]
+    public void Register_StackedAttributes_AllRecorded()
+    {
+        var registry = new ReactiveComponentRegistry();
+        registry.Register(typeof(SubscribesToAlphaAndBeta));
+        registry.Freeze();
+
+        Assert.Contains(typeof(SubscribesToAlphaAndBeta), registry.GetSubscribers(typeof(TestSignalAlpha)));
+        Assert.Contains(typeof(SubscribesToAlphaAndBeta), registry.GetSubscribers(typeof(TestSignalBeta)));
+    }
+
+    [Fact]
+    public void Register_NonGenericAttribute_Recorded()
+    {
+        var registry = new ReactiveComponentRegistry();
+        registry.Register(typeof(SubscribesToGammaNonGeneric));
+        registry.Freeze();
+
+        Assert.Contains(typeof(SubscribesToGammaNonGeneric), registry.GetSubscribers(typeof(TestSignalGamma)));
+    }
+
+    [Fact]
+    public void Register_InheritedAttribute_AppliesToDerivedComponent()
+    {
+        var registry = new ReactiveComponentRegistry();
+        registry.Register(typeof(DerivedFromAlphaSubscriber));
+        registry.Freeze();
+
+        Assert.Contains(typeof(DerivedFromAlphaSubscriber), registry.GetSubscribers(typeof(TestSignalAlpha)));
+    }
+
+    [Fact]
+    public void Register_MultipleComponentsForSameSignal_AllReturned()
+    {
+        var registry = new ReactiveComponentRegistry();
+        registry.Register(typeof(SubscribesToAlpha));
+        registry.Register(typeof(SubscribesToAlphaAndBeta));
+        registry.Freeze();
+
+        var subs = registry.GetSubscribers(typeof(TestSignalAlpha));
+        Assert.Contains(typeof(SubscribesToAlpha), subs);
+        Assert.Contains(typeof(SubscribesToAlphaAndBeta), subs);
+    }
+
+    [Fact]
+    public void OnReactiveSignalAttribute_NonGeneric_RejectsNonSignalType()
+    {
+        var ex = Assert.Throws<ArgumentException>(() => new OnReactiveSignalAttribute(typeof(string)));
+        Assert.Contains(nameof(IReactiveSignal), ex.Message);
+    }
 }

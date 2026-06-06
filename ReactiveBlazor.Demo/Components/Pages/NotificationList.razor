@@ -1,0 +1,64 @@
+@inherits ReactiveBlazor.ReactiveComponent
+@attribute [OnReactiveSignal<NotificationAdded>]
+@attribute [OnReactiveSignal<NotificationsCleared>]
+@inject ReactiveBlazor.Demo.Services.NotificationService Notifications
+
+<ReactiveRoot Owner="this">
+    <div class="card bg-base-100 border border-success/40 shadow-sm">
+        <div class="card-body p-5">
+            <div class="flex items-center justify-between mb-3">
+                <div>
+                    <h3 class="font-bold text-base">Feed</h3>
+                    <p class="text-[11px] text-base-content/50 font-mono mt-0.5">
+                        subscribes: Added, Cleared
+                        <span class="text-warning">(NOT Read)</span>
+                    </p>
+                </div>
+                <span class="badge badge-success badge-outline">@Items.Count</span>
+            </div>
+
+            @if (Items.Count == 0)
+            {
+                <div class="text-center py-6 text-sm text-base-content/40 border border-dashed border-base-300 rounded-lg">
+                    No notifications. Add one with the composer.
+                </div>
+            }
+            else
+            {
+                <ul class="divide-y divide-base-200">
+                    @foreach (var n in Items)
+                    {
+                        <li class="py-2 flex items-center gap-2 text-sm">
+                            <span class="badge badge-sm @LevelBadgeClass(n.Level)">@n.Level</span>
+                            <span class="flex-1 truncate">@n.Message</span>
+                            <span class="text-[10px] text-base-content/40 font-mono">#@n.Id</span>
+                        </li>
+                    }
+                </ul>
+            }
+
+            <div class="mt-3 text-[11px] text-base-content/50 font-mono border-t border-base-300 pt-2">
+                Rendered: <span class="text-success">@RenderedAt</span>
+                <span class="text-warning ml-2">— stays the same when you click "Mark 1 read"</span>
+            </div>
+        </div>
+    </div>
+</ReactiveRoot>
+
+@code {
+    public List<ReactiveBlazor.Demo.Models.Notification> Items { get; set; } = [];
+    public string RenderedAt { get; set; } = "";
+
+    protected override void OnInitialized()
+    {
+        Items = Notifications.GetAll().ToList();
+        RenderedAt = DateTime.Now.ToString("HH:mm:ss.fff");
+    }
+
+    private static string LevelBadgeClass(string level) => level switch
+    {
+        "success" => "badge-success",
+        "warning" => "badge-warning",
+        _ => "badge-info"
+    };
+}

@@ -211,7 +211,10 @@ public sealed class ReactiveComponentRegistry
 {
     private Dictionary<string, Type> _byKey = new(StringComparer.Ordinal);
     private Dictionary<Type, string> _byType = new();
+    private Dictionary<Type, HashSet<Type>> _subscribersBySignal = [];
     private volatile bool _frozen;
+
+    private static readonly IReadOnlyCollection<Type> Empty = Array.Empty<Type>();
 
     /// <summary>Registers a single component type. Throws if the registry is frozen.</summary>
     public void Register(Type t)
@@ -221,6 +224,17 @@ public sealed class ReactiveComponentRegistry
         var key = t.FullName ?? throw new InvalidOperationException($"{t} has no full name.");
         _byKey[key] = t;
         _byType[t] = key;
+
+        // Index any [OnReactiveSignal<T>] / [OnReactiveSignal(typeof(T))] subscriptions.
+        foreach (var attr in t.GetCustomAttributes(typeof(OnReactiveSignalAttribute), inherit: true))
+        {
+            if (attr is OnReactiveSignalAttribute sub)
+            {
+                if (!_subscribersBySignal.TryGetValue(sub.SignalType, out var set))
+                    _subscribersBySignal[sub.SignalType] = set = [];
+                set.Add(t);
+            }
+        }
     }
 
     /// <summary>Scans an assembly for all concrete <see cref="ReactiveComponent"/> subclasses and registers them.</summary>
@@ -241,6 +255,8 @@ public sealed class ReactiveComponentRegistry
         // Snapshot into new dictionaries to ensure no ongoing mutation.
         _byKey = new Dictionary<string, Type>(_byKey, StringComparer.Ordinal);
         _byType = new Dictionary<Type, string>(_byType);
+        _subscribersBySignal = _subscribersBySignal.ToDictionary(
+            kv => kv.Key, kv => new HashSet<Type>(kv.Value));
         _frozen = true;
     }
 
@@ -253,4 +269,11 @@ public sealed class ReactiveComponentRegistry
     public Type GetType(string key) =>
         _byKey.TryGetValue(key, out var t) ? t
         : throw new InvalidOperationException($"Unknown component key '{key}'.");
+
+    /// <summary>
+    /// Returns the component types that have subscribed to the given signal type via
+    /// <c>[OnReactiveSignal&lt;T&gt;]</c>. Returns an empty collection when no subscribers exist.
+    /// </summary>
+    public IReadOnlyCollection<Type> GetSubscribers(Type signalType) =>
+        _subscribersBySignal.TryGetValue(signalType, out var set) ? set : Empty;
 }

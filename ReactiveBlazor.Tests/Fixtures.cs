@@ -74,6 +74,41 @@ public class InheritedComponent : CustomBaseComponent
 }
 
 // ---------------------------------------------------------------------------
+// Signal-related fixtures
+// ---------------------------------------------------------------------------
+
+public sealed record TestSignalAlpha : IReactiveSignal;
+public sealed record TestSignalBeta : IReactiveSignal;
+public sealed record TestSignalGamma : IReactiveSignal;
+
+[OnReactiveSignal<TestSignalAlpha>]
+public class SubscribesToAlpha : ReactiveComponent
+{
+    protected override void BuildRenderTree(Microsoft.AspNetCore.Components.Rendering.RenderTreeBuilder builder) { }
+}
+
+[OnReactiveSignal<TestSignalAlpha>]
+[OnReactiveSignal<TestSignalBeta>]
+public class SubscribesToAlphaAndBeta : ReactiveComponent
+{
+    protected override void BuildRenderTree(Microsoft.AspNetCore.Components.Rendering.RenderTreeBuilder builder) { }
+}
+
+[OnReactiveSignal(typeof(TestSignalGamma))]
+public class SubscribesToGammaNonGeneric : ReactiveComponent
+{
+    protected override void BuildRenderTree(Microsoft.AspNetCore.Components.Rendering.RenderTreeBuilder builder) { }
+}
+
+[OnReactiveSignal<TestSignalAlpha>]
+public class BaseAlphaSubscriber : ReactiveComponent
+{
+    protected override void BuildRenderTree(Microsoft.AspNetCore.Components.Rendering.RenderTreeBuilder builder) { }
+}
+
+public class DerivedFromAlphaSubscriber : BaseAlphaSubscriber { }
+
+// ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 

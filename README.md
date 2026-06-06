@@ -9,7 +9,7 @@ ReactiveBlazor lets you build interactive server-rendered Blazor components that
 ## Features
 
 - **Zero client-side code required** — ~220 lines of vanilla JS inside the library, no developer-written JS or build steps needed.
-- **Multi-Component OOB Updates** — Actions that mutate shared state or DI services automatically re-render and morph all sibling components on the page in a single request.
+- **Strongly-typed signals for OOB updates** — Actions publish typed `IReactiveSignal` records; components opt in with `[OnReactiveSignal<T>]` to be re-rendered out-of-band. No tight coupling through shared services required.
 - **Signed & encrypted state** — Component state is protected with ASP.NET Data Protection to prevent tampering.
 - **Time-limited tokens** — State tokens expire after a configurable lifetime (default: 24 hours) to prevent stale submissions.
 - **One-Time Use Tokens (Anti-Replay)** — Nonce validation to protect non-idempotent actions from duplicate replay.
@@ -88,18 +88,142 @@ Inherit from `ReactiveComponent`, wrap your markup in `<ReactiveRoot>`, and decl
 
 ---
 
-## Multi-Component Out-of-Band (OOB) Updates
+## Multi-Component Out-of-Band (OOB) Updates via Reactive Signals
 
-In static SSR, components are typically isolated. However, ReactiveBlazor supports **automatic out-of-band updates** to keep sibling components in sync without any client-side JavaScript glue.
+In static SSR, components are typically isolated. ReactiveBlazor lets you keep them in sync
+without coupling them through shared services or writing any client-side glue — just publish
+a typed signal from an action, and every subscribed component on the page is re-rendered
+out-of-band in the same dispatch response.
 
-When an action is dispatched:
-1. The client sends the state of the target component *and* the states of all other reactive components currently present on the page.
-2. The server processes the action on the target component first, mutating system state (e.g. updating a singleton `CartService`).
-3. The server then batch renders the target component and all other sibling components.
-4. It returns a JSON dictionary of updates (`id -> html`).
-5. The client runtime morphs all updated components on the page.
+### 1. Define a signal
 
-No developer configuration is required. Simply use standard C# Dependency Injection or services (like a shared Cart or Notification service), and any component depending on that service will update in real-time when actions occur!
+Any `record` (or class) that implements `IReactiveSignal` is a signal. Payloads are optional:
+
+```csharp
+public sealed record CartChanged : IReactiveSignal;
+public sealed record NotificationAdded(int Id, string Level) : IReactiveSignal;
+```
+
+### 2. Publish from an action
+
+Every `ReactiveComponent` has access to `ReactiveSignals` for publishing:
+
+```csharp
+[ReactiveAction]
+public void AddToCart(int productId)
+{
+    _cart.Add(productId);
+    ReactiveSignals.Publish<CartChanged>();
+    // Or with a payload:
+    // ReactiveSignals.Publish(new NotificationAdded(id: 42, level: "info"));
+}
+```
+
+Three overloads are available:
+
+```csharp
+ReactiveSignals.Publish<CartChanged>();                            // default-constructed
+ReactiveSignals.Publish(new NotificationAdded(42, "info"));        // instance with payload
+ReactiveSignals.Publish(typeof(CartChanged));                      // runtime Type
+```
+
+### 3. Subscribe on the consumer component
+
+Decorate the consumer class with `[OnReactiveSignal<T>]`. Stack the attribute to subscribe
+to multiple signals:
+
+```razor
+@inherits ReactiveBlazor.ReactiveComponent
+@attribute [OnReactiveSignal<CartChanged>]
+
+<ReactiveRoot Owner="this">
+    <span class="badge">@ItemCount</span>
+</ReactiveRoot>
+
+@code {
+    public int ItemCount { get; set; }
+    protected override void OnInitialized() => ItemCount = _cart.Count();
+}
+```
+
+```razor
+@attribute [OnReactiveSignal<NotificationAdded>]
+@attribute [OnReactiveSignal<NotificationRead>]
+@attribute [OnReactiveSignal<NotificationsCleared>]
+```
+
+### 4. (Optional) Read the published payload
+
+The class attribute alone is enough to get a component re-rendered. If you also want the
+**data** that was published — not just a refresh — query the bus from inside a Blazor
+lifecycle method using the same `ReactiveSignals` property you publish with:
+
+```razor
+@inherits ReactiveBlazor.ReactiveComponent
+@attribute [OnReactiveSignal<NotificationAdded>]
+@attribute [OnReactiveSignal<NotificationsCleared>]
+@inject NotificationService Notifications
+
+<ReactiveRoot Owner="this">
+    <span>🔔 @UnreadCount</span>
+    @if (LastToast is not null)
+    {
+        <div class="alert alert-@LastToast.Level">#@LastToast.Id — @LastToast.Message</div>
+    }
+</ReactiveRoot>
+
+@code {
+    public int UnreadCount { get; set; }
+    public NotificationAdded? LastToast { get; set; }
+
+    protected override void OnInitialized()
+    {
+        // Always refresh from source of truth
+        UnreadCount = Notifications.UnreadCount();
+
+        // Read every NotificationAdded published this dispatch (empty if none)
+        foreach (var s in ReactiveSignals.GetPublished<NotificationAdded>())
+            LastToast = s;
+
+        // Cheap boolean check for payload-less signals
+        if (ReactiveSignals.WasPublished<NotificationsCleared>())
+            LastToast = null;
+    }
+}
+```
+
+Three query methods are available on `IReactiveSignals`:
+
+```csharp
+IEnumerable<T> GetPublished<T>() where T : IReactiveSignal;   // payloads, in publish order
+bool WasPublished<T>() where T : IReactiveSignal;             // any of T published?
+bool WasPublished(Type signalType);                            // runtime form
+```
+
+Polymorphic queries work too — `GetPublished<ICartSignal>()` returns every published signal
+whose type is assignable to `ICartSignal`.
+
+### How dispatch works
+
+For every dispatch:
+
+1. The client sends the state of the target component **plus** the states of every other
+   reactive component currently on the page.
+2. The server runs the action on the target, which may publish zero or more signals into
+   the per-request `IReactiveSignals` bus.
+3. The server collects every component type subscribed to a published signal via
+   `[OnReactiveSignal<T>]` and re-renders the corresponding instances on the page.
+4. The response returns a JSON dictionary of `id → html` containing only the target + the
+   matched subscribers — not every component on the page.
+5. The client morphs each entry into the DOM using Idiomorph.
+
+Components that don't subscribe to any published signal are **not** re-rendered, even if
+they were sent up in the request. This keeps updates targeted and avoids unintended
+side-effects on unrelated components.
+
+> The demo project includes a multi-signal page at `/notifications` showing three signal
+> types, three subscribers (each subscribed to a different combination), and one isolated
+> component to verify that non-subscribers are skipped.
 
 ---
 

@@ -51,6 +51,24 @@ public abstract class ReactiveComponent : ComponentBase
     [Inject]
     private Microsoft.Extensions.Options.IOptions<ReactiveOptions>? Options { get; set; }
 
+    /// <summary>
+    /// Per-request bus for publishing reactive signals. Subscribed sibling components
+    /// (decorated with <c>[OnReactiveSignal&lt;T&gt;]</c>) are re-rendered out-of-band in the
+    /// same dispatch response.
+    /// </summary>
+    /// <example>
+    /// <code>
+    /// [ReactiveAction]
+    /// public void AddToCart(int productId)
+    /// {
+    ///     _cart.Add(productId);
+    ///     ReactiveSignals.Publish&lt;CartChanged&gt;();
+    /// }
+    /// </code>
+    /// </example>
+    [Inject]
+    protected IReactiveSignals ReactiveSignals { get; set; } = default!;
+
     private bool RequireOptIn => Options?.Value?.RequireOptInState ?? false;
 
     /// <summary>

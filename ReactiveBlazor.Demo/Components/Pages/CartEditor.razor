@@ -139,6 +139,7 @@
         {
             Cart.UpdateQuantity(productId, item.Quantity + 1);
             RefreshCartData();
+            ReactiveSignals.Publish<CartChanged>();
         }
     }
 
@@ -150,6 +151,7 @@
         {
             Cart.UpdateQuantity(productId, item.Quantity - 1);
             RefreshCartData();
+            ReactiveSignals.Publish<CartChanged>();
         }
     }
 
@@ -158,6 +160,7 @@
     {
         Cart.RemoveFromCart(productId);
         RefreshCartData();
+        ReactiveSignals.Publish<CartChanged>();
     }
 
     [ReactiveAction]

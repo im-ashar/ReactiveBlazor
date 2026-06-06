@@ -55,6 +55,7 @@ public static class ReactiveServiceCollectionExtensions
 
         services.AddSingleton(registry);
         services.AddScoped<IReactiveStateCodec, ReactiveStateCodec>();
+        services.AddScoped<IReactiveSignals, ReactiveSignals>();
         services.TryAddSingleton<IReactiveNonceStore, InMemoryReactiveNonceStore>();
         return services;
     }
@@ -213,12 +214,14 @@ public static class ReactiveEndpointRouteBuilderExtensions
                 ct.ThrowIfCancellationRequested();
                 var reactiveServices = new ReactiveServiceProvider(services, new ReactiveNavigationManager(http));
                 await using var renderer = new HtmlRenderer(reactiveServices, loggerFactory);
-                
+                var registry = services.GetRequiredService<ReactiveComponentRegistry>();
+                var signals = (ReactiveSignals)services.GetRequiredService<IReactiveSignals>();
+
                 var updates = await renderer.Dispatcher.InvokeAsync(async () =>
                 {
                     var results = new Dictionary<string, string>();
-                    
-                    // 1. Render the target component first so its action runs and mutates state
+
+                    // 1. Render the target component first so its action runs and may publish signals.
                     var targetComponent = decryptedComponents.First(c => c.Id == req.TargetId);
                     logger.LogDebug("Dispatching action '{Action}' on target component {Type} (id: {Id}, state: {StateSize} bytes).",
                         req.Action ?? "(bind-only)", targetComponent.Type.Name, targetComponent.Id, targetComponent.StateJson.Length);
@@ -230,24 +233,39 @@ public static class ReactiveEndpointRouteBuilderExtensions
                         ["ReactiveArgs"] = req.Args is null ? null : JsonSerializer.Serialize(req.Args),
                         ["ReactiveBindings"] = req.Bindings is null ? null : JsonSerializer.Serialize(req.Bindings),
                     });
-                    
+
                     var targetOutput = await renderer.RenderComponentAsync(targetComponent.Type, targetParams);
                     results[targetComponent.Id] = targetOutput.ToHtmlString();
 
-                    // 2. Render all other components to refresh their state against the updated system state
+                    // 2. Compute the set of component types subscribed to any signal published by the action.
+                    var emitted = signals.PublishedTypes;
+                    var refreshTypes = new HashSet<Type>();
+                    foreach (var sig in emitted)
+                    {
+                        foreach (var sub in registry.GetSubscribers(sig))
+                            refreshTypes.Add(sub);
+                    }
+
+                    // 3. Render only siblings whose type is subscribed to an emitted signal.
+                    var refreshed = 0;
                     foreach (var (id, type, stateJson, _) in decryptedComponents)
                     {
                         if (id == req.TargetId) continue;
+                        if (!refreshTypes.Contains(type)) continue;
 
                         var siblingParams = ParameterView.FromDictionary(new Dictionary<string, object?>
                         {
                             ["ReactiveState"] = stateJson
                         });
-                        
+
                         var siblingOutput = await renderer.RenderComponentAsync(type, siblingParams);
                         results[id] = siblingOutput.ToHtmlString();
+                        refreshed++;
                     }
-                    
+
+                    logger.LogDebug("Signals: {EmittedCount} emitted, refreshing {RefreshedCount} subscribed siblings.",
+                        emitted.Count, refreshed);
+
                     return results;
                 });
 

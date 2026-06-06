@@ -1,4 +1,5 @@
 @inherits ReactiveBlazor.ReactiveComponent
+@attribute [OnReactiveSignal<CartChanged>]
 @inject ReactiveBlazor.Demo.Services.CartService Cart
 
 <ReactiveRoot Owner="this">

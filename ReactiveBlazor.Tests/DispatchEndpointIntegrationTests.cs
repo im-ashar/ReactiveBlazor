@@ -46,9 +46,13 @@ public class DispatchEndpointIntegrationTests : IAsyncDisposable
 
                     var registry = new ReactiveComponentRegistry();
                     registry.Register(typeof(IntegrationCounter));
+                    registry.Register(typeof(SignalPublisher));
+                    registry.Register(typeof(SignalSubscriber));
+                    registry.Register(typeof(UnrelatedSibling));
                     registry.Freeze();
                     services.AddSingleton(registry);
                     services.AddScoped<IReactiveStateCodec, ReactiveStateCodec>();
+                    services.AddScoped<IReactiveSignals, ReactiveSignals>();
                     services.AddSingleton<IReactiveNonceStore, InMemoryReactiveNonceStore>();
                 });
                 web.Configure(app =>
@@ -242,11 +246,11 @@ public class DispatchEndpointIntegrationTests : IAsyncDisposable
     // ── Multi-component OOB updates ───────────────────────────────────────
 
     [Fact]
-    public async Task Dispatch_MultiComponent_RendersAllComponents()
+    public async Task Dispatch_MultiComponent_NoSignalPublished_OnlyTargetRendered()
     {
         var targetState = """{"Count":5,"ComponentId":"target"}""";
         var siblingState = """{"Count":10,"ComponentId":"sibling"}""";
-        
+
         var targetToken = _codec.Protect(typeof(IntegrationCounter), targetState);
         var siblingToken = _codec.Protect(typeof(IntegrationCounter), siblingState);
 
@@ -273,17 +277,93 @@ public class DispatchEndpointIntegrationTests : IAsyncDisposable
         var response = await _client.SendAsync(request);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        
         var updates = await response.Content.ReadFromJsonAsync<Dictionary<string, string>>();
         Assert.NotNull(updates);
         Assert.True(updates.ContainsKey("target"));
-        Assert.True(updates.ContainsKey("sibling"));
+        // Sibling did not subscribe to anything and target published no signals,
+        // so sibling must NOT appear in the response.
+        Assert.False(updates.ContainsKey("sibling"));
+    }
 
-        // Check that target component is updated (Count 5 -> 6)
-        Assert.Contains("Count: 6", updates["target"]);
-        
-        // Check that sibling component is re-rendered but unchanged (Count 10)
-        Assert.Contains("Count: 10", updates["sibling"]);
+    [Fact]
+    public async Task Dispatch_SignalPublished_RefreshesOnlySubscribedSiblings()
+    {
+        var targetState = """{"ComponentId":"target"}""";
+        var subscribedState = """{"ComponentId":"sub"}""";
+        var unrelatedState = """{"ComponentId":"unrel"}""";
+
+        var targetToken = _codec.Protect(typeof(SignalPublisher), targetState);
+        var subscribedToken = _codec.Protect(typeof(SignalSubscriber), subscribedState);
+        var unrelatedToken = _codec.Protect(typeof(UnrelatedSibling), unrelatedState);
+
+        var body = new
+        {
+            targetId = "target",
+            action = "PublishTestSignal",
+            args = (object?[]?)null,
+            bindings = (object?)null,
+            components = new[]
+            {
+                new { id = "target", state = targetToken },
+                new { id = "sub", state = subscribedToken },
+                new { id = "unrel", state = unrelatedToken }
+            }
+        };
+
+        var request = new HttpRequestMessage(HttpMethod.Post, "/_reactive/dispatch")
+        {
+            Content = JsonContent.Create(body)
+        };
+        request.Headers.Add("RequestVerificationToken", _antiforgeryToken);
+        request.Headers.Add("Cookie", _antiforgeryCookie);
+
+        var response = await _client.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var updates = await response.Content.ReadFromJsonAsync<Dictionary<string, string>>();
+        Assert.NotNull(updates);
+        Assert.True(updates.ContainsKey("target"));
+        Assert.True(updates.ContainsKey("sub"));
+        Assert.False(updates.ContainsKey("unrel"));
+    }
+
+    [Fact]
+    public async Task Dispatch_NoAction_NoSignalsEmitted_OnlyTargetReturned()
+    {
+        // Bind-only dispatch (no action) publishes nothing, so no siblings refresh.
+        var targetState = """{"Count":1,"ComponentId":"target"}""";
+        var siblingState = """{"ComponentId":"sub"}""";
+
+        var targetToken = _codec.Protect(typeof(IntegrationCounter), targetState);
+        var siblingToken = _codec.Protect(typeof(SignalSubscriber), siblingState);
+
+        var body = new
+        {
+            targetId = "target",
+            action = (string?)null,
+            args = (object?[]?)null,
+            bindings = (object?)null,
+            components = new[]
+            {
+                new { id = "target", state = targetToken },
+                new { id = "sub", state = siblingToken }
+            }
+        };
+
+        var request = new HttpRequestMessage(HttpMethod.Post, "/_reactive/dispatch")
+        {
+            Content = JsonContent.Create(body)
+        };
+        request.Headers.Add("RequestVerificationToken", _antiforgeryToken);
+        request.Headers.Add("Cookie", _antiforgeryCookie);
+
+        var response = await _client.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var updates = await response.Content.ReadFromJsonAsync<Dictionary<string, string>>();
+        Assert.NotNull(updates);
+        Assert.True(updates.ContainsKey("target"));
+        Assert.False(updates.ContainsKey("sub"));
     }
 
     [Fact]
@@ -362,6 +442,47 @@ public class IntegrationCounter : ReactiveComponent
         {
             childBuilder.AddContent(3, $"Count: {Count}");
         }));
+        builder.CloseComponent();
+    }
+}
+
+// ── Signal test components ──────────────────────────────────────────────
+
+public sealed record IntegrationTestSignal : IReactiveSignal;
+
+public class SignalPublisher : ReactiveComponent
+{
+    [ReactiveAction]
+    public void PublishTestSignal() => ReactiveSignals.Publish<IntegrationTestSignal>();
+
+    protected override void BuildRenderTree(RenderTreeBuilder builder)
+    {
+        builder.OpenComponent<ReactiveRoot>(0);
+        builder.AddAttribute(1, "Owner", this);
+        builder.AddAttribute(2, "ChildContent", (RenderFragment)(cb => cb.AddContent(3, "publisher")));
+        builder.CloseComponent();
+    }
+}
+
+[OnReactiveSignal<IntegrationTestSignal>]
+public class SignalSubscriber : ReactiveComponent
+{
+    protected override void BuildRenderTree(RenderTreeBuilder builder)
+    {
+        builder.OpenComponent<ReactiveRoot>(0);
+        builder.AddAttribute(1, "Owner", this);
+        builder.AddAttribute(2, "ChildContent", (RenderFragment)(cb => cb.AddContent(3, "subscriber")));
+        builder.CloseComponent();
+    }
+}
+
+public class UnrelatedSibling : ReactiveComponent
+{
+    protected override void BuildRenderTree(RenderTreeBuilder builder)
+    {
+        builder.OpenComponent<ReactiveRoot>(0);
+        builder.AddAttribute(1, "Owner", this);
+        builder.AddAttribute(2, "ChildContent", (RenderFragment)(cb => cb.AddContent(3, "unrelated")));
         builder.CloseComponent();
     }
 }

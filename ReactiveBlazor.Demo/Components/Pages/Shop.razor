@@ -88,5 +88,6 @@
     {
         CartService.AddToCart(productId);
         RefreshCartQuantities();
+        ReactiveSignals.Publish<CartChanged>();
     }
 }

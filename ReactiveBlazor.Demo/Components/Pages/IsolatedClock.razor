@@ -1,0 +1,44 @@
+@inherits ReactiveBlazor.ReactiveComponent
+
+<ReactiveRoot Owner="this">
+    <div class="card bg-base-100 border border-warning/40 shadow-sm">
+        <div class="card-body p-5">
+            <div class="flex items-center justify-between mb-1">
+                <h3 class="font-bold text-base">Isolated Clock</h3>
+                <span class="badge badge-warning badge-sm badge-outline">no subscriptions</span>
+            </div>
+            <p class="text-[11px] text-base-content/50 font-mono">
+                subscribes: <span class="text-warning">— none —</span>
+            </p>
+
+            <div class="text-4xl font-black tabular-nums text-warning text-center py-4 select-none">
+                @RenderedAt
+            </div>
+
+            <p class="text-xs text-base-content/60">
+                This component is on the page but carries no <code class="text-primary">[OnReactiveSignal&lt;T&gt;]</code>.
+                Clicks in the composer will <em>not</em> re-render it. Use its own button to refresh.
+            </p>
+
+            <div class="mt-2">
+                <button type="button" class="btn btn-sm btn-warning btn-outline btn-block" data-on-click="Refresh">
+                    Refresh clock
+                </button>
+            </div>
+        </div>
+    </div>
+</ReactiveRoot>
+
+@code {
+    public string RenderedAt { get; set; } = "";
+
+    protected override void OnInitialized() =>
+        RenderedAt = DateTime.Now.ToString("HH:mm:ss");
+
+    [ReactiveAction]
+    public void Refresh()
+    {
+        // Re-running OnInitialized via the dispatch lifecycle updates the time.
+        // No signal published — this component is fully isolated.
+    }
+}

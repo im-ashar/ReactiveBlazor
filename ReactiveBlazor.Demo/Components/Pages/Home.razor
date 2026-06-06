@@ -182,6 +182,23 @@
                     <NavLink href="/shop" class="btn btn-info btn-sm btn-block">Explore OOB E-Commerce</NavLink>
                 </div>
             </div>
+
+            <!-- Reactive Signals Card -->
+            <div class="card bg-base-100 border border-base-300 shadow-sm flex flex-col justify-between hover:shadow-md hover:border-primary/20 transition-all duration-300">
+                <div class="card-body p-6">
+                    <div class="flex items-center gap-2 mb-2">
+                        <span class="badge badge-sm badge-secondary badge-outline">Signals</span>
+                        <span class="text-[10px] text-base-content/40">[OnReactiveSignal&lt;T&gt;]</span>
+                    </div>
+                    <h3 class="card-title text-base font-bold text-base-content">Reactive Signals (Typed OOB)</h3>
+                    <p class="text-xs text-base-content/60 leading-relaxed mt-1">
+                        Publish strongly-typed <code class="text-secondary">IReactiveSignal</code> records from actions. Subscribed components re-render and can read the payload via <code class="text-secondary">GetPublished&lt;T&gt;()</code> in <code class="text-secondary">OnInitialized</code>.
+                    </p>
+                </div>
+                <div class="p-5 pt-0">
+                    <NavLink href="/notifications" class="btn btn-secondary btn-sm btn-block">Explore Multi-Signal Demo</NavLink>
+                </div>
+            </div>
         </div>
     </div>
 </div>

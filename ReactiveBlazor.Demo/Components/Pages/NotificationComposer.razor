@@ -1,0 +1,89 @@
+@inherits ReactiveBlazor.ReactiveComponent
+@inject ReactiveBlazor.Demo.Services.NotificationService Notifications
+
+<ReactiveRoot Owner="this">
+    <div class="card bg-base-100 border border-base-300 shadow-sm">
+        <div class="card-body p-5">
+            <div class="flex items-center justify-between mb-3">
+                <h3 class="font-bold text-base">Notification Composer</h3>
+                <span class="text-[10px] text-base-content/40">publishes signals</span>
+            </div>
+
+            <p class="text-xs text-base-content/60 mb-4">
+                Each button publishes a different <code class="text-primary">IReactiveSignal</code> type.
+                Only components subscribed to that signal are re-rendered out-of-band.
+            </p>
+
+            <div class="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                <button type="button" class="btn btn-sm btn-info gap-1" data-on-click="AddInfo">
+                    + Info
+                </button>
+                <button type="button" class="btn btn-sm btn-success gap-1" data-on-click="AddSuccess">
+                    + Success
+                </button>
+                <button type="button" class="btn btn-sm btn-warning gap-1" data-on-click="AddWarning">
+                    + Warning
+                </button>
+                <button type="button" class="btn btn-sm btn-outline btn-secondary col-span-2 sm:col-span-1" data-on-click="MarkOneRead">
+                    Mark 1 read
+                </button>
+                <button type="button" class="btn btn-sm btn-outline btn-error col-span-2 sm:col-span-2" data-on-click="ClearAll">
+                    Clear all
+                </button>
+            </div>
+
+            <div class="mt-3 text-[11px] text-base-content/50 font-mono">
+                Last action: <span class="text-base-content/80">@LastAction</span>
+            </div>
+        </div>
+    </div>
+</ReactiveRoot>
+
+@code {
+    public string LastAction { get; set; } = "(none yet)";
+
+    [ReactiveAction]
+    public void AddInfo()
+    {
+        var n = Notifications.Add("info", $"Heads up at {DateTime.Now:HH:mm:ss}");
+        LastAction = $"Publish<NotificationAdded>(id={n.Id}, info)";
+        ReactiveSignals.Publish(new NotificationAdded(n.Id, n.Level));
+    }
+
+    [ReactiveAction]
+    public void AddSuccess()
+    {
+        var n = Notifications.Add("success", $"Operation completed at {DateTime.Now:HH:mm:ss}");
+        LastAction = $"Publish<NotificationAdded>(id={n.Id}, success)";
+        ReactiveSignals.Publish(new NotificationAdded(n.Id, n.Level));
+    }
+
+    [ReactiveAction]
+    public void AddWarning()
+    {
+        var n = Notifications.Add("warning", $"Disk space low at {DateTime.Now:HH:mm:ss}");
+        LastAction = $"Publish<NotificationAdded>(id={n.Id}, warning)";
+        ReactiveSignals.Publish(new NotificationAdded(n.Id, n.Level));
+    }
+
+    [ReactiveAction]
+    public void MarkOneRead()
+    {
+        var id = Notifications.MarkOldestUnreadAsRead();
+        if (id is null)
+        {
+            LastAction = "Nothing to mark — no unread notifications";
+            return;
+        }
+        LastAction = $"Publish<NotificationRead>(id={id})";
+        ReactiveSignals.Publish(new NotificationRead(id.Value));
+    }
+
+    [ReactiveAction]
+    public void ClearAll()
+    {
+        Notifications.Clear();
+        LastAction = "Publish<NotificationsCleared>()";
+        ReactiveSignals.Publish<NotificationsCleared>();
+    }
+}

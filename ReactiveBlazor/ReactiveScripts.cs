@@ -43,6 +43,12 @@ public sealed class ReactiveScripts : ComponentBase
         builder.AddAttribute(5, "content", Options.Value.DispatchPath);
         builder.CloseElement();
 
+        // Library version meta tag (consumed by reactive.js)
+        builder.OpenElement(11, "meta");
+        builder.AddAttribute(12, "name", "reactive-version");
+        builder.AddAttribute(13, "content", ReactiveBlazorVersion.Current);
+        builder.CloseElement();
+
         // Idiomorph (must load before reactive.js)
         builder.OpenElement(6, "script");
         builder.AddAttribute(7, "src", "/_content/ReactiveBlazor/idiomorph.min.js");

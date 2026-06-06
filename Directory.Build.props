@@ -1,0 +1,14 @@
+<Project>
+
+  <!--
+    Single source of truth for the ReactiveBlazor library version.
+    Update the value below to bump:
+      * the NuGet package version
+      * the version surfaced to client-side JS (via <meta name="reactive-version">)
+      * the version shown in the demo UI
+  -->
+  <PropertyGroup>
+    <ReactiveBlazorVersion>1.3.0</ReactiveBlazorVersion>
+  </PropertyGroup>
+
+</Project>

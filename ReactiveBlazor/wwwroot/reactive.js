@@ -1,4 +1,6 @@
-// ReactiveBlazor client runtime v1.0.0.
+// ReactiveBlazor client runtime.
+// Version is injected by the server at render time via the
+// <meta name="reactive-version"> tag emitted by <ReactiveScripts />.
 // Handles: dispatch, request queuing, DOM morphing (Idiomorph), busy state,
 //          error handling, debounce, redirect, retry, and generic data-on-* events.
 //
@@ -19,6 +21,11 @@
 
   function csrfToken() {
     var m = document.querySelector('meta[name="reactive-csrf"]');
+    return m ? m.getAttribute("content") : "";
+  }
+
+  function libraryVersion() {
+    var m = document.querySelector('meta[name="reactive-version"]');
     return m ? m.getAttribute("content") : "";
   }
 
@@ -268,6 +275,6 @@
       var root = rootOf(el) || el;
       dispatch(root, null, [], "latest");
     },
-    version: "1.0.0"
+    version: libraryVersion()
   };
 })();

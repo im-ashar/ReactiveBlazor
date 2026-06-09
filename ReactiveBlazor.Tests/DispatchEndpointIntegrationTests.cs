@@ -402,6 +402,100 @@ public class DispatchEndpointIntegrationTests : IAsyncDisposable
         var errorBody = await response2.Content.ReadAsStringAsync();
         Assert.Contains("This request has already been processed.", errorBody);
     }
+
+    // ── Authorization failures map to 403 ──────────────────────────────────
+
+    [Fact]
+    public async Task Dispatch_ActionThrowsUnauthorized_Returns403()
+    {
+        var stateJson = """{"Count":0,"ComponentId":"rtest_deny"}""";
+        var token = _codec.Protect(typeof(IntegrationCounter), stateJson);
+
+        var request = CreateDispatchRequest(token, "Deny");
+        var response = await _client.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    // ── Unexpected action exceptions return a sanitized 500 (no leak) ───────
+
+    [Fact]
+    public async Task Dispatch_ActionThrowsUnexpected_Returns500_WithoutLeakingDetails()
+    {
+        var stateJson = """{"Count":0,"ComponentId":"rtest_boom"}""";
+        var token = _codec.Protect(typeof(IntegrationCounter), stateJson);
+
+        var request = CreateDispatchRequest(token, "Boom");
+        var response = await _client.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        var body = await response.Content.ReadAsStringAsync();
+        Assert.DoesNotContain("super secret internal detail", body);
+        Assert.DoesNotContain("InvalidProgramException", body);
+    }
+
+    // ── Malformed client binding input is a 400, not a 500 ─────────────────
+
+    [Fact]
+    public async Task Dispatch_InvalidBindingValue_Returns400()
+    {
+        var stateJson = """{"Count":0,"ComponentId":"rtest_bind"}""";
+        var token = _codec.Protect(typeof(IntegrationCounter), stateJson);
+
+        var body = new
+        {
+            targetId = "rtest_bind",
+            action = (string?)null,
+            args = (object?[]?)null,
+            bindings = new Dictionary<string, object?> { ["Count"] = "not-a-number" },
+            components = new[] { new { id = "rtest_bind", state = token } }
+        };
+
+        var request = new HttpRequestMessage(HttpMethod.Post, "/_reactive/dispatch")
+        {
+            Content = JsonContent.Create(body)
+        };
+        request.Headers.Add("RequestVerificationToken", _antiforgeryToken);
+        request.Headers.Add("Cookie", _antiforgeryCookie);
+
+        var response = await _client.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    // ── Too many components rejected before decryption (DoS guard) ──────────
+
+    [Fact]
+    public async Task Dispatch_TooManyComponents_Returns400()
+    {
+        // Default MaxComponentsPerDispatch is 100; send 101 dummy components.
+        // The guard runs before decryption, so the state values need not be valid.
+        var components = Enumerable.Range(0, 101)
+            .Select(i => new { id = $"c{i}", state = "x" })
+            .ToArray();
+
+        var body = new
+        {
+            targetId = "c0",
+            action = (string?)null,
+            args = (object?[]?)null,
+            bindings = (object?)null,
+            components
+        };
+
+        var request = new HttpRequestMessage(HttpMethod.Post, "/_reactive/dispatch")
+        {
+            Content = JsonContent.Create(body)
+        };
+        request.Headers.Add("RequestVerificationToken", _antiforgeryToken);
+        request.Headers.Add("Cookie", _antiforgeryCookie);
+
+        var response = await _client.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        var errorBody = await response.Content.ReadAsStringAsync();
+        Assert.Contains("Too many components", errorBody);
+    }
 }
 
 // ── Test component ──────────────────────────────────────────────────────────
@@ -433,6 +527,12 @@ public class IntegrationCounter : ReactiveComponent
     {
         Count += 10;
     }
+
+    [ReactiveAction]
+    public void Deny() => throw new UnauthorizedAccessException("nope");
+
+    [ReactiveAction]
+    public void Boom() => throw new InvalidProgramException("super secret internal detail");
 
     protected override void BuildRenderTree(RenderTreeBuilder builder)
     {

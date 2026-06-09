@@ -8,7 +8,7 @@ ReactiveBlazor lets you build interactive server-rendered Blazor components that
 
 ## Features
 
-- **Zero client-side code required** — ~220 lines of vanilla JS inside the library, no developer-written JS or build steps needed.
+- **Zero client-side code required** — ~280 lines of vanilla JS inside the library, no developer-written JS or build steps needed.
 - **Strongly-typed signals for OOB updates** — Actions publish typed `IReactiveSignal` records; components opt in with `[OnReactiveSignal<T>]` to be re-rendered out-of-band. No tight coupling through shared services required.
 - **Signed & encrypted state** — Component state is protected with ASP.NET Data Protection to prevent tampering.
 - **Time-limited tokens** — State tokens expire after a configurable lifetime (default: 24 hours) to prevent stale submissions.
@@ -454,6 +454,34 @@ builder.Services.AddReactiveComponents(options =>
 
 ---
 
+## When to Use ReactiveBlazor
+
+ReactiveBlazor fills a specific gap: **event-driven, granular interactivity on static SSR without a persistent connection**. It is not a replacement for Blazor's interactive render modes — pick the right tool:
+
+| Scenario | Recommended approach |
+|---|---|
+| Public, high-traffic pages where a per-user SignalR circuit is too expensive | **ReactiveBlazor** |
+| Cheap/stateless hosting, autoscaling, or serverless where circuits are impractical | **ReactiveBlazor** |
+| Small islands of interactivity (counters, search, cart badges) on otherwise static pages | **ReactiveBlazor** |
+| Rich, low-latency client apps with lots of fast UI state | **Interactive WebAssembly** |
+| Highly interactive apps where a stateful circuit is acceptable | **Interactive Server** |
+| Simple data submission that fits a `<form>` post | **Built-in enhanced form handling** (no library needed) |
+
+Each interaction is a server round-trip, so ReactiveBlazor is best for interactions measured in clicks, not continuous high-frequency input.
+
+---
+
+## Limitations & Roadmap
+
+- **Requires JavaScript.** Interactivity is driven by the bundled runtime; there is no no-JS form fallback. Progressive enhancement is an explicit non-goal — if you need it, use built-in enhanced forms for those interactions.
+- **Whole-page state travels on each dispatch.** The client uploads the encrypted state of every reactive component on the page per interaction. Keep per-component state small (see `MaxStateBytes` / `MaxComponentsPerDispatch`).
+- **Trimming / Native AOT.** State serialization and action dispatch use reflection and reflection-based `System.Text.Json`, so the library is **not currently trim-safe or AOT-safe**. Avoid `PublishTrimmed` / `PublishAot` for apps using ReactiveBlazor. A source-generator-based path is on the roadmap.
+- **Authorize inside actions.** Every `[ReactiveAction]` is a remotely invokable endpoint. Throw `UnauthorizedAccessException` for denied access (returned to the client as `403`); perform all validation server-side (see the Security section).
+
+---
+
 ## License
 
 This project is licensed under the [MIT License](LICENSE).
+
+It bundles [Idiomorph](https://github.com/bigskysoftware/idiomorph) (BSD 2-Clause); see [THIRD-PARTY-NOTICES.txt](THIRD-PARTY-NOTICES.txt).

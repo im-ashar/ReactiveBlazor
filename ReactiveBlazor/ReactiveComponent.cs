@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.ComponentModel;
 using System.Reflection;
+using System.Runtime.ExceptionServices;
 using System.Text.Json;
 using Microsoft.AspNetCore.Components;
 
@@ -133,8 +134,27 @@ public abstract class ReactiveComponent : ComponentBase
         if (doc is null) return;
         var caseInsensitiveDoc = new Dictionary<string, JsonElement>(doc, StringComparer.OrdinalIgnoreCase);
         foreach (var p in StateProperties(GetType(), RequireOptIn))
-            if (caseInsensitiveDoc.TryGetValue(p.Name, out var val))
+        {
+            if (!caseInsensitiveDoc.TryGetValue(p.Name, out var val))
+                continue;
+            try
+            {
                 p.SetValue(this, ConvertBinding(val, p.PropertyType));
+            }
+            catch (Exception ex) when (ex
+                is FormatException
+                or OverflowException
+                or InvalidCastException
+                or ArgumentException
+                or NotSupportedException
+                or JsonException)
+            {
+                // Untrusted client-supplied binding values that fail to convert are a bad request,
+                // not a server fault. Surface as a typed exception the dispatch endpoint maps to 400.
+                throw new ReactiveBindingException(
+                    $"Could not bind value for property '{p.Name}' of type '{p.PropertyType.Name}'.", ex);
+            }
+        }
     }
 
     // ---- Action dispatch ----
@@ -146,9 +166,29 @@ public abstract class ReactiveComponent : ComponentBase
                 $"Unknown action '{action}'. " +
                 "Ensure the method is public, declared on your component, and decorated with [ReactiveAction].");
 
-        var args = BindArgs(method, argsJson);
-        var result = method.Invoke(this, args);
-        if (result is Task task) await task;
+        object?[] args;
+        try
+        {
+            args = BindArgs(method, argsJson);
+        }
+        catch (JsonException ex)
+        {
+            // Malformed client-supplied action arguments are a bad request, not a server fault.
+            throw new ReactiveBindingException(
+                $"Could not bind arguments for action '{action}'.", ex);
+        }
+
+        try
+        {
+            var result = method.Invoke(this, args);
+            if (result is Task task) await task;
+        }
+        catch (TargetInvocationException tie) when (tie.InnerException is not null)
+        {
+            // Surface the real exception (e.g. UnauthorizedAccessException from authorization
+            // checks) rather than the reflection wrapper, preserving its original stack trace.
+            ExceptionDispatchInfo.Capture(tie.InnerException).Throw();
+        }
     }
 
     // ---- Cached reflection helpers ----
@@ -245,4 +285,15 @@ public abstract class ReactiveComponent : ComponentBase
                 : (ps[i].ParameterType.IsValueType ? Activator.CreateInstance(ps[i].ParameterType) : null);
         return result;
     }
+}
+
+/// <summary>
+/// Thrown when untrusted client-supplied binding values or action arguments cannot be
+/// converted to the target property/parameter type. The dispatch endpoint maps this to a
+/// <c>400 Bad Request</c> instead of leaking a <c>500</c>.
+/// </summary>
+internal sealed class ReactiveBindingException : Exception
+{
+    public ReactiveBindingException(string message, Exception innerException)
+        : base(message, innerException) { }
 }

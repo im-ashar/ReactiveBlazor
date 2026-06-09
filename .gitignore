@@ -366,3 +366,7 @@ FodyWeavers.xsd
 nupkg/
 msbuild.log
 **/app.output.css
+
+# ASP.NET Data Protection keys (never commit secrets/keys)
+keys/
+**/keys/

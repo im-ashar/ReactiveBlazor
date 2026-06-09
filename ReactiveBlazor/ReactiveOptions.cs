@@ -29,6 +29,14 @@ public sealed class ReactiveOptions
     public TimeSpan StateTokenLifetime { get; set; } = TimeSpan.FromHours(24);
 
     /// <summary>
+    /// Maximum number of components a single dispatch request may carry.
+    /// Requests exceeding this limit are rejected with a <c>400 Bad Request</c>
+    /// <em>before</em> any decryption work is done, to bound the cost of a single request.
+    /// Default: 100.
+    /// </summary>
+    public int MaxComponentsPerDispatch { get; set; } = 100;
+
+    /// <summary>
     /// The URL path where the reactive dispatch endpoint is mapped.
     /// This value is used by both the server-side endpoint and the client-side JS runtime
     /// (emitted via a <c>&lt;meta name="reactive-endpoint"&gt;</c> tag).

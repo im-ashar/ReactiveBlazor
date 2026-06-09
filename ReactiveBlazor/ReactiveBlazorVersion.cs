@@ -11,7 +11,7 @@ namespace ReactiveBlazor;
 public static class ReactiveBlazorVersion
 {
     /// <summary>
-    /// The current library version (e.g. <c>"1.2.0"</c>), without any
+    /// The current library version (e.g. <c>"1.3.0"</c>), without any
     /// SourceLink commit-hash suffix.
     /// </summary>
     public static string Current { get; } = Resolve();

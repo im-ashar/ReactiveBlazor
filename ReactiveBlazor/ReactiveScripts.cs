@@ -44,20 +44,20 @@ public sealed class ReactiveScripts : ComponentBase
         builder.CloseElement();
 
         // Library version meta tag (consumed by reactive.js)
-        builder.OpenElement(11, "meta");
-        builder.AddAttribute(12, "name", "reactive-version");
-        builder.AddAttribute(13, "content", ReactiveBlazorVersion.Current);
+        builder.OpenElement(6, "meta");
+        builder.AddAttribute(7, "name", "reactive-version");
+        builder.AddAttribute(8, "content", ReactiveBlazorVersion.Current);
         builder.CloseElement();
 
         // Idiomorph (must load before reactive.js)
-        builder.OpenElement(6, "script");
-        builder.AddAttribute(7, "src", "/_content/ReactiveBlazor/idiomorph.min.js");
+        builder.OpenElement(9, "script");
+        builder.AddAttribute(10, "src", "/_content/ReactiveBlazor/idiomorph.min.js");
         builder.CloseElement();
 
         // ReactiveBlazor client runtime
-        builder.OpenElement(8, "script");
-        builder.AddAttribute(9, "src", ScriptPath);
-        builder.AddAttribute(10, "defer", true);
+        builder.OpenElement(11, "script");
+        builder.AddAttribute(12, "src", ScriptPath);
+        builder.AddAttribute(13, "defer", true);
         builder.CloseElement();
     }
 }

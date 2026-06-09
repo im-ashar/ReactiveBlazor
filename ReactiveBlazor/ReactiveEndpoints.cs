@@ -131,6 +131,13 @@ public static class ReactiveEndpointRouteBuilderExtensions
                 return Results.BadRequest("Component list is empty.");
             }
 
+            if (req.Components.Count > opts.MaxComponentsPerDispatch)
+            {
+                logger.LogWarning("Dispatch request contains {Count} components, exceeding limit {Limit}.",
+                    req.Components.Count, opts.MaxComponentsPerDispatch);
+                return Results.BadRequest("Too many components in dispatch request.");
+            }
+
             // --- Validate and decrypt all components ---
             var decryptedComponents = new List<(string Id, Type Type, string StateJson, string Nonce)>();
             var targetComponentFound = false;
@@ -271,10 +278,29 @@ public static class ReactiveEndpointRouteBuilderExtensions
 
                 return Results.Json(updates);
             }
+            catch (UnauthorizedAccessException ex)
+            {
+                // Authorization failures thrown from inside an action map to 403, not a leaked 500.
+                logger.LogWarning(ex, "Action '{Action}' denied (unauthorized).", req.Action);
+                return Results.StatusCode(StatusCodes.Status403Forbidden);
+            }
+            catch (ReactiveBindingException ex)
+            {
+                // Malformed client-supplied binding/argument input is a bad request, not a server error.
+                logger.LogWarning(ex, "Invalid binding or argument input for action '{Action}'.", req.Action);
+                return Results.BadRequest("Invalid input. Please refresh the page and try again.");
+            }
             catch (Exception ex) when (ex is InvalidOperationException or JsonException)
             {
                 logger.LogWarning(ex, "Action dispatch failed.");
                 return Results.BadRequest("Action dispatch failed. The request may be invalid.");
+            }
+            catch (Exception ex)
+            {
+                // Unexpected exception from user action code: log server-side, return a sanitized
+                // 500 with no body so stack traces / internals are never leaked to the client.
+                logger.LogError(ex, "Unexpected error during reactive dispatch for action '{Action}'.", req.Action);
+                return Results.StatusCode(StatusCodes.Status500InternalServerError);
             }
         });
 

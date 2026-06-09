@@ -266,7 +266,9 @@
   }
 
   // Register all supported events.
-  ["click", "change", "input", "submit", "keydown", "keyup", "focus", "blur"].forEach(handleEvent);
+  // Note: only events that bubble are usable with document-level delegation.
+  // (focus/blur do not bubble and are intentionally excluded.)
+  ["click", "change", "input", "submit", "keydown", "keyup"].forEach(handleEvent);
 
   // ---- Public API ----
 

@@ -12,6 +12,7 @@ builder.Services.AddReactiveComponents(assemblies: typeof(Program).Assembly);
 builder.Services.AddSingleton<ReactiveBlazor.Demo.Services.ProductService>();
 builder.Services.AddSingleton<ReactiveBlazor.Demo.Services.CartService>();
 builder.Services.AddSingleton<ReactiveBlazor.Demo.Services.NotificationService>();
+builder.Services.AddSingleton<ReactiveBlazor.Demo.Services.SystemMetricsService>();
 
 var app = builder.Build();
 

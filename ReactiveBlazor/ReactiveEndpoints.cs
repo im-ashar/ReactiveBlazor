@@ -242,7 +242,9 @@ public static class ReactiveEndpointRouteBuilderExtensions
                     });
 
                     var targetOutput = await renderer.RenderComponentAsync(targetComponent.Type, targetParams);
-                    results[targetComponent.Id] = targetOutput.ToHtmlString();
+                    var targetHtml = targetOutput.ToHtmlString();
+                    ValidateBoundary(targetHtml, targetComponent.Type);
+                    results[targetComponent.Id] = targetHtml;
 
                     // 2. Compute the set of component types subscribed to any signal published by the action.
                     var emitted = signals.PublishedTypes;
@@ -266,7 +268,9 @@ public static class ReactiveEndpointRouteBuilderExtensions
                         });
 
                         var siblingOutput = await renderer.RenderComponentAsync(type, siblingParams);
-                        results[id] = siblingOutput.ToHtmlString();
+                        var siblingHtml = siblingOutput.ToHtmlString();
+                        ValidateBoundary(siblingHtml, type);
+                        results[id] = siblingHtml;
                         refreshed++;
                     }
 
@@ -306,4 +310,38 @@ public static class ReactiveEndpointRouteBuilderExtensions
 
         return endpoints;
     }
+
+    /// <summary>
+    /// Guards against the most common ReactiveBlazor authoring mistake: a component that renders
+    /// markup <em>outside</em> its <see cref="ReactiveRoot"/> (or omits it entirely). The client
+    /// morphs the returned HTML onto the single <c>data-component</c> boundary element, so the
+    /// rendered output's first element must be that boundary. If a component renders a wrapper
+    /// (e.g. a page header) around <c>&lt;ReactiveRoot&gt;</c>, the boundary ends up nested and
+    /// the morph duplicates the whole subtree into the previous one. We fail fast with an
+    /// actionable message instead of producing corrupted DOM.
+    /// </summary>
+    private static void ValidateBoundary(string html, Type componentType)
+    {
+        // The boundary div emitted by ReactiveRoot carries data-component as its first attribute.
+        // A correctly-authored component renders it as the outermost element, so the first '<'
+        // tag in the trimmed output must contain data-component before any other element opens.
+        var trimmed = html.AsSpan().TrimStart();
+        var firstTag = trimmed.IndexOf('<');
+        if (firstTag != 0)
+        {
+            // Leading text/whitespace before the first element — boundary can't be the root.
+            throw BoundaryError(componentType);
+        }
+
+        // Find the end of the first opening tag and ensure it carries data-component.
+        var tagEnd = trimmed.IndexOf('>');
+        if (tagEnd < 0 || !trimmed[..tagEnd].Contains("data-component", StringComparison.Ordinal))
+            throw BoundaryError(componentType);
+    }
+
+    private static InvalidOperationException BoundaryError(Type componentType) =>
+        new($"Reactive component '{componentType.Name}' must render <ReactiveRoot Owner=\"this\"> " +
+            "as its single outermost element, with no other markup outside it. " +
+            "Move any surrounding markup (page headers, wrappers, sibling components) into a parent " +
+            "page, or inside the ReactiveRoot. Otherwise the client morph nests the component into itself.");
 }

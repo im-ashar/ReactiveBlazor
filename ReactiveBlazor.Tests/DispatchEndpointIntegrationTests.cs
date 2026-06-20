@@ -49,6 +49,7 @@ public class DispatchEndpointIntegrationTests : IAsyncDisposable
                     registry.Register(typeof(SignalPublisher));
                     registry.Register(typeof(SignalSubscriber));
                     registry.Register(typeof(UnrelatedSibling));
+                    registry.Register(typeof(MarkupOutsideRootComponent));
                     registry.Freeze();
                     services.AddSingleton(registry);
                     services.AddScoped<IReactiveStateCodec, ReactiveStateCodec>();
@@ -463,6 +464,24 @@ public class DispatchEndpointIntegrationTests : IAsyncDisposable
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
 
+    // ── Boundary guard: markup outside ReactiveRoot is rejected ────────────
+
+    [Fact]
+    public async Task Dispatch_ComponentRendersMarkupOutsideRoot_Returns400()
+    {
+        var stateJson = """{"ComponentId":"rtest_badroot"}""";
+        var token = _codec.Protect(typeof(MarkupOutsideRootComponent), stateJson);
+
+        var request = CreateDispatchRequest(token, "Bump");
+        var response = await _client.SendAsync(request);
+
+        // The guard throws InvalidOperationException, which the endpoint maps to 400.
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        var body = await response.Content.ReadAsStringAsync();
+        // Must not leak the component type name to the client.
+        Assert.DoesNotContain("MarkupOutsideRootComponent", body);
+    }
+
     // ── Too many components rejected before decryption (DoS guard) ──────────
 
     [Fact]
@@ -584,5 +603,29 @@ public class UnrelatedSibling : ReactiveComponent
         builder.AddAttribute(1, "Owner", this);
         builder.AddAttribute(2, "ChildContent", (RenderFragment)(cb => cb.AddContent(3, "unrelated")));
         builder.CloseComponent();
+    }
+}
+
+/// <summary>
+/// Mis-authored component: renders a wrapper element <em>before</em> its ReactiveRoot, so the
+/// boundary is not the outermost element. The dispatch endpoint's boundary guard must reject it.
+/// </summary>
+public class MarkupOutsideRootComponent : ReactiveComponent
+{
+    public int Count { get; set; }
+
+    [ReactiveAction]
+    public void Bump() => Count++;
+
+    protected override void BuildRenderTree(RenderTreeBuilder builder)
+    {
+        // WRONG: a header div wraps ReactiveRoot instead of being inside it.
+        builder.OpenElement(0, "div");
+        builder.AddContent(1, "header outside the boundary");
+        builder.OpenComponent<ReactiveRoot>(2);
+        builder.AddAttribute(3, "Owner", this);
+        builder.AddAttribute(4, "ChildContent", (RenderFragment)(cb => cb.AddContent(5, $"Count: {Count}")));
+        builder.CloseComponent();
+        builder.CloseElement();
     }
 }

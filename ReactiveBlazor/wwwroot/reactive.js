@@ -33,6 +33,11 @@
   // Key = component element id.
   var queues = {};
 
+  // ---- Polling ----
+  // Key = component element id. One poller per component (attributes live on the root div).
+  var MIN_POLL_INTERVAL = 250; // ms floor to prevent runaway/abusive timers
+  var pollers = {};            // id -> { timer, interval }
+
   function rootOf(el) {
     return el.closest("[data-component]");
   }
@@ -192,6 +197,9 @@
       if (finalRoot) {
         clearBusy(finalRoot);
       }
+
+      // Reconcile pollers: morphs may have added, removed, or retuned data-poll attributes.
+      scanPollers();
     } catch (err) {
       console.error("ReactiveBlazor network error:", err);
       clearBusy(root);
@@ -237,6 +245,87 @@
     }, ms);
   }
 
+  // ---- Pollers (periodic auto-refresh) ----
+  // A component opts into polling by emitting data-poll / data-poll-interval (and optional
+  // data-poll-args) on its <ReactiveRoot> div. Each tick fires the normal dispatch pipeline,
+  // so polling reuses queuing, signals/OOB, and DOM morphing for free. Because pollers are
+  // reconciled from the DOM after every morph, a component can start/stop/retune its own
+  // polling purely by toggling a server-side state property.
+
+  function readPollConfig(root) {
+    var action = root.getAttribute("data-poll");
+    if (!action) return null; // no action => no poll
+    var ms = parseInt(root.getAttribute("data-poll-interval"), 10);
+    if (!isFinite(ms) || ms <= 0) return null; // off / invalid / NaN
+    if (ms < MIN_POLL_INTERVAL) ms = MIN_POLL_INTERVAL; // clamp to floor
+    var args = [];
+    var raw = root.getAttribute("data-poll-args");
+    if (raw) {
+      try {
+        var parsed = JSON.parse(raw);
+        args = Array.isArray(parsed) ? parsed : [parsed];
+      } catch (e) {
+        args = [];
+      }
+    }
+    return { action: action, interval: ms, args: args };
+  }
+
+  function pollTick(id) {
+    return function () {
+      // Re-query by id: a morph (or the replaceWith fallback) may have replaced the node.
+      var root = document.getElementById(id);
+      if (!root) { clearPoller(id); return; }     // component gone
+      var cfg = readPollConfig(root);
+      if (!cfg) { clearPoller(id); return; }       // polling turned off server-side
+      // Skip while a dispatch for this component is in flight. "latest" queuing is the real
+      // anti-pile-up guarantee; this is just a cheap optimization to avoid redundant requests.
+      if (root.hasAttribute("data-reactive-busy")) return;
+      dispatch(root, cfg.action, cfg.args, "latest");
+    };
+  }
+
+  function clearPoller(id) {
+    var p = pollers[id];
+    if (p) {
+      clearInterval(p.timer);
+      delete pollers[id];
+    }
+  }
+
+  function clearAllPollers() {
+    for (var id in pollers) {
+      clearInterval(pollers[id].timer);
+    }
+    pollers = {};
+  }
+
+  // Reconcile timers against the current DOM: start new pollers, stop removed ones, and
+  // recreate any whose interval changed. Called on load, after every morph, and on tab focus.
+  function scanPollers() {
+    var seen = {};
+    document.querySelectorAll("[data-component]").forEach(function (el) {
+      var id = el.id;
+      if (!id) return;
+      var cfg = readPollConfig(el);
+      if (!cfg) return; // not polling; cleanup pass below handles any stale timer
+      seen[id] = true;
+      var existing = pollers[id];
+      if (existing && existing.interval === cfg.interval) {
+        return; // same cadence — keep the running timer to avoid phase reset / drift
+      }
+      clearPoller(id); // new poller, or interval changed -> (re)create
+      pollers[id] = {
+        timer: setInterval(pollTick(id), cfg.interval),
+        interval: cfg.interval
+      };
+    });
+    // Cleanup: stop pollers whose component disappeared or stopped polling.
+    for (var pid in pollers) {
+      if (!seen[pid]) clearPoller(pid);
+    }
+  }
+
   // ---- Delegated event handlers ----
 
   function handleEvent(eventName) {
@@ -270,6 +359,35 @@
   // (focus/blur do not bubble and are intentionally excluded.)
   ["click", "change", "input", "submit", "keydown", "keyup"].forEach(handleEvent);
 
+  // ---- Poller bootstrap & visibility pause ----
+
+  // Start pollers for components present on initial load (covers deferred/async script tags).
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", scanPollers);
+  } else {
+    scanPollers();
+  }
+
+  // Blazor enhanced navigation swaps page content via fetch without a full reload, so
+  // DOMContentLoaded never fires for subsequent pages. Re-scan after each enhanced load so
+  // pollers on a freshly-navigated page start immediately (not only after a first dispatch).
+  // The event fires on the page that owns the runtime; clear stale pollers first so timers
+  // for components that no longer exist are torn down. (No-op if Blazor isn't present.)
+    Blazor.addEventListener("enhancedload", function () {
+    clearAllPollers();
+    scanPollers();
+  });
+
+  // Pause polling while the tab is hidden; resume (rebuild from current DOM) when visible.
+  // No immediate catch-up dispatch on resume — avoids a thundering-herd refresh.
+  document.addEventListener("visibilitychange", function () {
+    if (document.hidden) {
+      clearAllPollers();
+    } else {
+      scanPollers();
+    }
+  });
+
   // ---- Public API ----
 
   window.ReactiveBlazor = {
@@ -277,6 +395,7 @@
       var root = rootOf(el) || el;
       dispatch(root, null, [], "latest");
     },
+    rescanPollers: scanPollers,
     version: libraryVersion()
   };
 })();

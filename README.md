@@ -8,8 +8,9 @@ ReactiveBlazor lets you build interactive server-rendered Blazor components that
 
 ## Features
 
-- **Zero client-side code required** — ~280 lines of vanilla JS inside the library, no developer-written JS or build steps needed.
+- **Zero client-side code required** — a few hundred lines of vanilla JS inside the library, no developer-written JS or build steps needed.
 - **Strongly-typed signals for OOB updates** — Actions publish typed `IReactiveSignal` records; components opt in with `[OnReactiveSignal<T>]` to be re-rendered out-of-band. No tight coupling through shared services required.
+- **Declarative authorization** — Reuses the framework's standard `[Authorize]` / `[AllowAnonymous]` on actions and components; roles, policies, and `<AuthorizeView>` all work, with denied components emitting no state token.
 - **Signed & encrypted state** — Component state is protected with ASP.NET Data Protection to prevent tampering.
 - **Time-limited tokens** — State tokens expire after a configurable lifetime (default: 24 hours) to prevent stale submissions.
 - **One-Time Use Tokens (Anti-Replay)** — Nonce validation to protect non-idempotent actions from duplicate replay.
@@ -263,8 +264,12 @@ builder.Services.AddReactiveComponents(options =>
 {
     options.MaxStateBytes = 128 * 1024;              // Max state size (default: 64KB)
     options.MaxTokenBytes = 512 * 1024;              // Max encrypted token size (default: 256KB)
+    options.MaxComponentsPerDispatch = 100;          // Max components per request (default: 100)
     options.StateTokenLifetime = TimeSpan.FromHours(12); // Token expiry (default: 24h)
     options.DispatchPath = "/_reactive/dispatch";    // Custom dispatch endpoint (default)
+    options.RequireOptInState = false;               // Opt-in state serialization (default: false)
+    options.ReloadOnUnauthorized = true;             // Reload to login on a 401 dispatch (default: true)
+    options.BindStateToUser = false;                 // Bind state tokens to the issuing user (default: false)
 }, assemblies: typeof(Program).Assembly);
 ```
 
@@ -470,17 +475,78 @@ builder.Services.AddSingleton<IReactiveNonceStore, SqliteNonceStore>();
 Every public method marked with `[ReactiveAction]` is exposed as an endpoint that can be remotely invoked. 
 
 > [!IMPORTANT]
-> Do not rely on hiding buttons or elements in your Blazor markup to prevent users from executing actions. An attacker can easily read the state token from the DOM and fire a custom fetch POST request.
-> 
-> **You must perform all authorization, validation, and business rule checks inside the action method itself:**
-> ```csharp
-> [ReactiveAction]
-> public void DeleteRecord(int id)
-> {
->     if (!User.IsInRole("Admin")) throw new UnauthorizedAccessException();
->     // Delete code...
-> }
-> ```
+> Do not rely on hiding buttons or elements in your Blazor markup to prevent users from executing actions. An attacker can easily read the state token from the DOM and fire a custom fetch POST request. **Authorization must be enforced on the server** — either declaratively with `[Authorize]` (below) or imperatively inside the action.
+
+---
+
+### 🔐 Declarative Authorization
+
+ReactiveBlazor honors the framework's own **`[Authorize]`** and **`[AllowAnonymous]`** attributes — it does **not** define its own. It leverages your existing `IAuthorizationService` / `IAuthorizationPolicyProvider`, so roles, named policies, authentication schemes, and custom requirements behave exactly as they do in MVC and SignalR. There is nothing extra to register beyond your normal `builder.Services.AddAuthorization(...)` and an authentication scheme.
+
+**On an action** — checked on the server before the action runs:
+```csharp
+[ReactiveAction]
+[Authorize(Roles = "Admin")]
+public void DeleteRecord(int id) { /* ... */ }
+```
+
+**On a component** — checked on *every* render path (initial SSR, action dispatch, and signal-driven sibling refresh). A denied component renders an empty boundary with **no state token and no content**, and its actions never run:
+```csharp
+@attribute [Authorize(Policy = "CanViewBilling")]
+@inherits ReactiveBlazor.ReactiveComponent
+
+<ReactiveRoot Owner="this"> ... </ReactiveRoot>
+```
+
+`[AllowAnonymous]` on an action overrides a component-level `[Authorize]`, mirroring ASP.NET's "nearest AllowAnonymous wins" rule.
+
+`<AuthorizeView>` and `[CascadingParameter] Task<AuthenticationState>` work inside reactive components during dispatch — the current user is seeded into the render from `HttpContext.User`.
+
+**Status codes** match ASP.NET semantics: an unauthenticated caller gets **401**, an authenticated-but-denied caller gets **403**. Authorization evaluation **fails closed** — a missing policy or a throwing handler denies access (it never leaks a `500`).
+
+#### Session expiry while idle
+
+If a user's authentication cookie/token expires while they sit on a reactive page, the next action or poll returns **401**. By default the client runtime stops polling and performs a full-page reload of the current URL, letting your normal ASP.NET Core authentication pipeline issue its configured login redirect (with `returnUrl`). The library hardcodes no login path. Disable this behavior to handle 401 yourself (via the `reactive:error` event):
+```csharp
+builder.Services.AddReactiveComponents(options =>
+{
+    options.ReloadOnUnauthorized = false;
+});
+```
+
+#### Per-resource (per-row) authorization
+
+The `[Authorize]` attribute cannot see an action's arguments, so resource-based checks ("is this user the owner of record #5?") stay **imperative** inside the action. Inject `IAuthorizationService`, evaluate, and throw `UnauthorizedAccessException` (mapped to `403`) on denial:
+```csharp
+[ReactiveAction]
+public async Task Approve(int orderId)
+{
+    var order = await _db.Orders.FindAsync(orderId);
+    var result = await _authz.AuthorizeAsync(User, order, "CanApprove");
+    if (!result.Succeeded) throw new UnauthorizedAccessException();
+    // ...
+}
+```
+
+> [!NOTE]
+> `[Authorize]` requires your app to have registered authorization services (`AddAuthorization`) and an authentication scheme, and to call `UseAuthentication()` / `UseAuthorization()` as usual. ReactiveBlazor leverages that pipeline; it never replaces it.
+
+#### Binding state tokens to the user (`BindStateToUser`)
+
+State tokens are signed and encrypted, which proves *your server* issued them — but not *to whom*. A token read from the DOM in one session (a shared/kiosk machine, a screen share, a support attachment) could otherwise be replayed by a different user to load the original user's component state. Enabling `BindStateToUser` binds each token to the identity it was issued to:
+
+```csharp
+builder.Services.AddReactiveComponents(options =>
+{
+    options.BindStateToUser = true;
+}, assemblies: typeof(Program).Assembly);
+```
+
+When on, a token is only accepted for the **same** user on the next dispatch; replayed under a different identity, the component silently resets to default state (the original user's data is never loaded) — the same safe, non-throwing behavior as an expired token. Anonymous users share a single "no user" binding.
+
+- This is **not** an authorization control — every dispatch is *already* re-authorized against the live `HttpContext.User`, so leaving it off never enables privilege escalation. It closes a cross-user **state-data** confidentiality gap.
+- **Default: off.** Enabling it changes the token format and means tokens stop working across sign-in / sign-out / account-switch (the component resets) — desirable for authenticated apps, unnecessary for fully anonymous ones.
+- **Overhead is negligible:** a single short hash, computed once per request and reused for every component on the page (the codec is request-scoped), plus 16 bytes per token. The existing encryption/signing cost dominates.
 
 ---
 
@@ -537,7 +603,7 @@ Each interaction is a server round-trip, so ReactiveBlazor is best for interacti
 - **Requires JavaScript.** Interactivity is driven by the bundled runtime; there is no no-JS form fallback. Progressive enhancement is an explicit non-goal — if you need it, use built-in enhanced forms for those interactions.
 - **Whole-page state travels on each dispatch.** The client uploads the encrypted state of every reactive component on the page per interaction. Keep per-component state small (see `MaxStateBytes` / `MaxComponentsPerDispatch`).
 - **Trimming / Native AOT.** State serialization and action dispatch use reflection and reflection-based `System.Text.Json`, so the library is **not currently trim-safe or AOT-safe**. Avoid `PublishTrimmed` / `PublishAot` for apps using ReactiveBlazor. A source-generator-based path is on the roadmap.
-- **Authorize inside actions.** Every `[ReactiveAction]` is a remotely invokable endpoint. Throw `UnauthorizedAccessException` for denied access (returned to the client as `403`); perform all validation server-side (see the Security section).
+- **Authorize on the server.** Every `[ReactiveAction]` is a remotely invokable endpoint. Use the standard `[Authorize]` / `[AllowAnonymous]` attributes on actions and components for declarative role/policy checks (see the Security section); per-resource ("this row") checks remain imperative inside the action — throw `UnauthorizedAccessException` for denied access (returned to the client as `403`). `<AuthorizeView>` works inside reactive components during dispatch.
 
 ---
 

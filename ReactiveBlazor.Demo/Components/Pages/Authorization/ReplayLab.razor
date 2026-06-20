@@ -1,0 +1,95 @@
+@page "/replay-lab"
+
+<PageTitle>Token Replay Lab - ReactiveBlazor</PageTitle>
+
+<div class="space-y-6">
+    <!-- Header -->
+    <div class="flex flex-col md:flex-row md:items-center justify-between border-b border-base-300 pb-4 gap-4">
+        <div>
+            <h1 class="text-3xl font-bold text-base-content">Token Replay Lab</h1>
+            <p class="text-sm text-base-content/60 mt-1">
+                Demonstrates <code>ReactiveOptions.BindStateToUser</code> (enabled in this demo). Capture a
+                state token as one user, switch users, and replay it — the protection resets the component
+                instead of leaking the first user's data.
+            </p>
+        </div>
+        <div class="badge badge-error badge-outline font-semibold gap-2 py-3 px-4">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+            </svg>
+            BindStateToUser
+        </div>
+    </div>
+
+    <!-- Identity bar -->
+    <AuthorizeView>
+        <Authorized>
+            <div class="alert bg-base-100 border border-base-300 gap-3">
+                <span class="flex-1 text-sm">Signed in as <strong>@context.User.Identity?.Name</strong></span>
+                <a class="btn btn-ghost btn-sm" href="/login?ReturnUrl=/replay-lab">Switch user</a>
+            </div>
+        </Authorized>
+        <NotAuthorized>
+            <div class="alert alert-warning gap-3">
+                <span class="flex-1 text-sm">Sign in as one user, capture a token, then switch to another to see the replay blocked.</span>
+                <a class="btn btn-sm btn-primary" href="/login?ReturnUrl=/replay-lab">Sign in</a>
+            </div>
+        </NotAuthorized>
+    </AuthorizeView>
+
+    <!-- Step-by-step instructions -->
+    <ol class="steps steps-vertical lg:steps-horizontal w-full">
+        <li class="step step-primary">Sign in as user A</li>
+        <li class="step step-primary">Type a secret &amp; capture its token</li>
+        <li class="step step-primary">Switch to user B</li>
+        <li class="step step-primary">Replay A's token → it resets</li>
+    </ol>
+
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <!-- The reactive component under test -->
+        <SecretNote />
+
+        <!-- The lab control panel (plain JS, talks to the dispatch endpoint directly) -->
+        <div class="card bg-base-100 border border-error/40 shadow-sm">
+            <div class="card-body p-5 space-y-3">
+                <h3 class="font-bold text-base">Replay control</h3>
+                <p class="text-xs text-base-content/60">
+                    “Capture” copies the note's current encrypted state token. “Replay” POSTs that captured
+                    token to the dispatch endpoint <em>as the user you're signed in as right now</em> — exactly
+                    what an attacker with a stolen token would do.
+                </p>
+
+                <div class="flex gap-2 flex-wrap">
+                    <button type="button" class="btn btn-sm btn-outline" data-replay="capture">
+                        1 · Capture current token
+                    </button>
+                    <button type="button" class="btn btn-sm btn-error" data-replay="replay">
+                        2 · Replay captured token (as current user)
+                    </button>
+                </div>
+
+                <div class="text-[11px] font-mono break-all bg-base-200/50 rounded p-2 min-h-[3rem]" id="replay-captured">
+                    No token captured yet.
+                </div>
+
+                <div class="text-sm" id="replay-result"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Behavior note -->
+    <div class="card bg-base-100 border border-base-300 shadow-sm">
+        <div class="card-body p-5">
+            <h3 class="font-bold text-base mb-2">What you'll see</h3>
+            <ul class="list-disc list-inside text-sm text-base-content/70 space-y-1">
+                <li><strong>Same user</strong> replays the token → the note's secret is returned intact (legitimate round-trip).</li>
+                <li><strong>Different user</strong> replays it → the server returns the note <strong>reset to empty</strong>; user A's secret is never exposed.</li>
+                <li>Turn <code>BindStateToUser</code> off in <code>Program.cs</code> and the cross-user replay would instead return A's secret — that's the gap this option closes.</li>
+            </ul>
+        </div>
+    </div>
+</div>
+
+@* The replay harness lives in /replay-lab.js, loaded once from App.razor so it survives Blazor
+   enhanced navigation (which injects but does not execute page-level <script> tags). Buttons above
+   are wired via delegated data-replay handlers. *@

@@ -1,0 +1,41 @@
+@inherits ReactiveBlazor.ReactiveComponent
+@attribute [Authorize(Policy = "CanViewBilling")]
+
+@*
+    Component-level authorization with a named policy ("CanViewBilling" requires a
+    department=finance claim). When denied, ReactiveBlazor renders an EMPTY boundary with no
+    content and — importantly — NO state token, on every render path (initial SSR, dispatch, and
+    signal refresh). The component's actions never run. Inspect the DOM: a denied user sees only
+    <div data-reactive-denied> with no data-state attribute.
+*@
+
+<ReactiveRoot Owner="this">
+    <div class="card bg-base-100 border border-success/40 shadow-sm" id="billing-widget">
+        <div class="card-body p-5 space-y-3">
+            <div class="flex items-center justify-between">
+                <h3 class="font-bold text-base">Billing (Finance only)</h3>
+                <span class="badge badge-sm badge-success badge-outline font-mono">[Authorize(Policy)]</span>
+            </div>
+            <p class="text-xs text-base-content/60">
+                Requires the <code>CanViewBilling</code> policy (a <code>department=finance</code> claim).
+                If you can read this card, you are authorized — no token was ever emitted otherwise.
+            </p>
+
+            <div class="stat bg-base-200/40 rounded-lg py-2 px-3">
+                <div class="stat-title text-xs">Outstanding balance</div>
+                <div class="stat-value text-2xl text-success tabular-nums">$@Balance.ToString("N2")</div>
+            </div>
+
+            <button class="btn btn-success btn-sm" type="button" data-on-click="ApplyCredit">
+                Apply $10 credit
+            </button>
+        </div>
+    </div>
+</ReactiveRoot>
+
+@code {
+    public decimal Balance { get; set; } = 1240.00m;
+
+    [ReactiveAction]
+    public void ApplyCredit() => Balance = Math.Max(0, Balance - 10m);
+}

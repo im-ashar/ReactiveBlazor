@@ -1,0 +1,54 @@
+@inherits ReactiveBlazor.ReactiveComponent
+@attribute [Authorize(Roles = "Admin")]
+@attribute [OnReactiveSignal<AuditEntryAdded>]
+@inject ReactiveBlazor.Demo.Services.AuditLogService Audit
+
+@*
+    Component-level authorization on a signal-driven sibling. This subscribes to AuditEntryAdded
+    (published by the admin action) but ALSO requires the Admin role. For a non-admin the server
+    omits this component from the dispatch response entirely — it is never rendered or returned,
+    closing the gap where signal siblings would otherwise bypass action-level checks.
+*@
+
+<ReactiveRoot Owner="this">
+    <div class="card bg-base-100 border border-warning/40 shadow-sm" id="audit-log-sibling">
+        <div class="card-body p-5">
+            <div class="flex items-center justify-between mb-2">
+                <h3 class="font-bold text-base">Admin Audit Log</h3>
+                <span class="badge badge-sm badge-warning badge-outline font-mono">[Authorize] + [OnReactiveSignal]</span>
+            </div>
+            <p class="text-[11px] text-base-content/50 mb-3">
+                Admin-only OOB sibling. Refreshes when the privileged action publishes
+                <code>AuditEntryAdded</code>. Rendered: <span class="text-success font-mono">@RenderedAt</span>
+            </p>
+
+            @if (Entries.Count == 0)
+            {
+                <div class="text-xs text-base-content/50 italic">No audit entries yet.</div>
+            }
+            else
+            {
+                <ul class="space-y-1 text-xs font-mono max-h-48 overflow-y-auto">
+                    @foreach (var e in Entries)
+                    {
+                        <li class="flex gap-2 border-b border-base-300/50 pb-1">
+                            <span class="text-base-content/40">@e.At.ToString("HH:mm:ss")</span>
+                            <span class="text-base-content/80">@e.Message</span>
+                        </li>
+                    }
+                </ul>
+            }
+        </div>
+    </div>
+</ReactiveRoot>
+
+@code {
+    public string RenderedAt { get; set; } = "";
+    public List<(DateTime At, string Message)> Entries { get; set; } = [];
+
+    protected override void OnInitialized()
+    {
+        RenderedAt = DateTime.Now.ToString("HH:mm:ss.fff");
+        Entries = Audit.Recent().ToList();
+    }
+}

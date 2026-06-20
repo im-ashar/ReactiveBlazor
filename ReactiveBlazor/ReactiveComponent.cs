@@ -53,6 +53,25 @@ public abstract class ReactiveComponent : ComponentBase
     private Microsoft.Extensions.Options.IOptions<ReactiveOptions>? Options { get; set; }
 
     /// <summary>
+    /// Resolves the per-dispatch authorization gate optionally. We inject the service provider rather
+    /// than the context directly because <c>[Inject]</c> hard-fails when a service is unregistered,
+    /// and minimal hosting/render setups (and plain SSR with no authorization) may not register it.
+    /// </summary>
+    [Inject]
+    private IServiceProvider Services { get; set; } = default!;
+
+    private IReactiveAuthorizationContext? ReactiveAuthContext =>
+        Services.GetService(typeof(IReactiveAuthorizationContext)) as IReactiveAuthorizationContext;
+
+    /// <summary>
+    /// <c>true</c> when component-level <c>[Authorize]</c> denied the current user. When set, the
+    /// component renders a suppressed boundary (no state token, no content) and its action does not run.
+    /// Never serialized into the state token.
+    /// </summary>
+    [ReactiveIgnore]
+    public bool IsAuthorizationDenied { get; internal set; }
+
+    /// <summary>
     /// Per-request bus for publishing reactive signals. Subscribed sibling components
     /// (decorated with <c>[OnReactiveSignal&lt;T&gt;]</c>) are re-rendered out-of-band in the
     /// same dispatch response.
@@ -86,6 +105,21 @@ public abstract class ReactiveComponent : ComponentBase
     {
         // 1. Apply control parameters (and any real [Parameter]s) coming in.
         parameters.SetParameterProperties(this);
+
+        // 0. Component-level authorization. Every render path (initial SSR, target action dispatch,
+        //    and signal-driven sibling refresh) funnels through here, so this is the single gate that
+        //    decides whether this user may see the component at all. When denied we render a suppressed
+        //    boundary and run nothing else — no state rehydration, no bindings, no action.
+        if (ReactiveAuthContext is not null)
+            IsAuthorizationDenied = !await ReactiveAuthContext.IsComponentAuthorizedAsync(GetType());
+
+        if (IsAuthorizationDenied)
+        {
+            if (string.IsNullOrEmpty(ComponentId))
+                ComponentId = "r" + Guid.NewGuid().ToString("N")[..12];
+            await base.SetParametersAsync(ParameterView.Empty);
+            return;
+        }
 
         // 2. Rehydrate prior state (no-op on the very first page render).
         if (!string.IsNullOrEmpty(ReactiveState))

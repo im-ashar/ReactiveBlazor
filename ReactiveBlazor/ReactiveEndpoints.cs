@@ -1,8 +1,10 @@
 using System.Reflection;
 using System.Text.Json;
 using Microsoft.AspNetCore.Antiforgery;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Components;
+using Microsoft.AspNetCore.Components.Authorization;
 using Microsoft.AspNetCore.Components.Web;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
@@ -57,6 +59,20 @@ public static class ReactiveServiceCollectionExtensions
         services.AddScoped<IReactiveStateCodec, ReactiveStateCodec>();
         services.AddScoped<IReactiveSignals, ReactiveSignals>();
         services.TryAddSingleton<IReactiveNonceStore, InMemoryReactiveNonceStore>();
+
+        // Authorization context for the INITIAL SSR render path (the dispatch endpoint constructs its
+        // own seeded instance and overrides this via the renderer's service provider). Backed by the
+        // ambient HttpContext.User so component-level [Authorize] is enforced on first paint too.
+        services.TryAddScoped<IReactiveAuthorizationContext>(sp =>
+        {
+            var user = sp.GetService<IHttpContextAccessor>()?.HttpContext?.User
+                       ?? new System.Security.Claims.ClaimsPrincipal(new System.Security.Claims.ClaimsIdentity());
+            return new ReactiveAuthorizationContext(
+                user,
+                sp.GetService<IAuthorizationService>(),
+                sp.GetService<IAuthorizationPolicyProvider>(),
+                sp.GetRequiredService<ILoggerFactory>().CreateLogger("ReactiveBlazor.Authorization"));
+        });
         return services;
     }
 }
@@ -71,16 +87,30 @@ public static class ReactiveEndpointRouteBuilderExtensions
         string TargetId, string? Action, object?[]? Args, Dictionary<string, object?>? Bindings, List<ComponentDto> Components);
 
     /// <summary>
-    /// Wraps an existing service provider to substitute <see cref="NavigationManager"/>
-    /// with a properly initialized instance for reactive dispatch rendering.
-    /// Components like <c>NavLink</c> require <c>NavigationManager</c> to be initialized,
-    /// which does not happen when using <see cref="HtmlRenderer"/> directly.
+    /// Wraps an existing service provider to substitute services that must be request-initialized
+    /// for reactive dispatch rendering: <see cref="NavigationManager"/> (components like <c>NavLink</c>
+    /// require it initialized, which does not happen when using <see cref="HtmlRenderer"/> directly),
+    /// the <see cref="AuthenticationStateProvider"/> seeded from the current user (so
+    /// <c>&lt;AuthorizeView&gt;</c> and cascading auth state work), and the per-dispatch
+    /// <see cref="IReactiveAuthorizationContext"/>. All other services fall through to the inner provider
+    /// (including the app's <see cref="Microsoft.AspNetCore.Authorization.IAuthorizationService"/>).
     /// </summary>
-    private sealed class ReactiveServiceProvider(IServiceProvider inner, NavigationManager navigationManager)
+    private sealed class ReactiveServiceProvider(
+        IServiceProvider inner,
+        NavigationManager navigationManager,
+        AuthenticationStateProvider authStateProvider,
+        IReactiveAuthorizationContext authContext)
         : IServiceProvider
     {
         public object? GetService(Type serviceType) =>
-            serviceType == typeof(NavigationManager) ? navigationManager : inner.GetService(serviceType);
+            // Return ourselves for IServiceProvider so components that inject it (e.g. to optionally
+            // resolve IReactiveAuthorizationContext) observe these substitutions rather than the inner
+            // provider.
+            serviceType == typeof(IServiceProvider) ? this
+            : serviceType == typeof(NavigationManager) ? navigationManager
+            : serviceType == typeof(AuthenticationStateProvider) ? authStateProvider
+            : serviceType == typeof(IReactiveAuthorizationContext) ? authContext
+            : inner.GetService(serviceType);
     }
 
     /// <summary>
@@ -111,6 +141,22 @@ public static class ReactiveEndpointRouteBuilderExtensions
             }
             catch (AntiforgeryValidationException ex)
             {
+                // The antiforgery token is bound to the authenticated user. When a session/cookie
+                // expires while the page is open, the still-embedded token no longer matches the now
+                // unauthenticated request, so validation fails here *before* any action authorization.
+                // For apps that use authentication, treat that specific case as a session-expiry 401
+                // (client reloads so the login redirect fires) rather than a generic 400 — otherwise an
+                // idle-expired user would be stuck on a "Request failed (400)" toast. We only do this
+                // when (a) an authentication scheme is actually registered and (b) the request is now
+                // unauthenticated; an authenticated user, or an app with no auth at all, still gets the
+                // 400 "refresh the page" path for a genuinely stale/tampered token.
+                if (http.User?.Identity?.IsAuthenticated != true
+                    && await HasAuthenticationSchemesAsync(http.RequestServices))
+                {
+                    logger.LogWarning(ex, "Antiforgery validation failed for an unauthenticated request (likely expired session).");
+                    return Results.StatusCode(StatusCodes.Status401Unauthorized);
+                }
+
                 logger.LogWarning(ex, "Antiforgery token validation failed.");
                 return Results.BadRequest("Antiforgery validation failed. Please refresh the page.");
             }
@@ -192,7 +238,21 @@ public static class ReactiveEndpointRouteBuilderExtensions
                 return Results.BadRequest("Target component not found.");
             }
 
-            // --- Replay check for target action ---
+            // --- Authorization context (seeded from the live request principal) ---
+            // Decisions are evaluated against HttpContext.User on every dispatch, never against the
+            // state token, so a stolen/replayed token never grants access and revoked permissions
+            // take effect immediately. The context fails closed on any evaluation error.
+            var authContext = new ReactiveAuthorizationContext(
+                http.User,
+                http.RequestServices.GetService<IAuthorizationService>(),
+                http.RequestServices.GetService<IAuthorizationPolicyProvider>(),
+                logger);
+
+            // Pre-compute component-level decisions for every distinct type in this dispatch so the
+            // synchronous render path (and the sibling loop) can read them without awaiting.
+            await authContext.PrecomputeAsync(decryptedComponents.Select(c => c.Type).Distinct());
+
+            // --- Replay check + action-level authorization for the target action ---
             if (!string.IsNullOrEmpty(req.Action))
             {
                 var targetCompData = decryptedComponents.First(c => c.Id == req.TargetId);
@@ -201,6 +261,20 @@ public static class ReactiveEndpointRouteBuilderExtensions
 
                 if (method != null)
                 {
+                    // Authorize the action (combining method- and component-level [Authorize]/[AllowAnonymous])
+                    // before any side effect, mirroring ASP.NET's 401 (unauthenticated) vs 403 (forbidden).
+                    var authResult = await authContext.AuthorizeActionAsync(targetCompData.Type, method, resource: http);
+                    if (authResult == ReactiveAuthResult.Unauthenticated)
+                    {
+                        logger.LogWarning("Action '{Action}' requires authentication.", req.Action);
+                        return Results.StatusCode(StatusCodes.Status401Unauthorized);
+                    }
+                    if (authResult == ReactiveAuthResult.Forbidden)
+                    {
+                        logger.LogWarning("Action '{Action}' denied (forbidden).", req.Action);
+                        return Results.StatusCode(StatusCodes.Status403Forbidden);
+                    }
+
                     var attr = method.GetCustomAttribute<ReactiveActionAttribute>();
                     if (attr != null && attr.RequireOneTimeToken)
                     {
@@ -219,7 +293,9 @@ public static class ReactiveEndpointRouteBuilderExtensions
             try
             {
                 ct.ThrowIfCancellationRequested();
-                var reactiveServices = new ReactiveServiceProvider(services, new ReactiveNavigationManager(http));
+                var authStateProvider = new SeededAuthenticationStateProvider(http.User);
+                var reactiveServices = new ReactiveServiceProvider(
+                    services, new ReactiveNavigationManager(http), authStateProvider, authContext);
                 await using var renderer = new HtmlRenderer(reactiveServices, loggerFactory);
                 var registry = services.GetRequiredService<ReactiveComponentRegistry>();
                 var signals = (ReactiveSignals)services.GetRequiredService<IReactiveSignals>();
@@ -228,23 +304,36 @@ public static class ReactiveEndpointRouteBuilderExtensions
                 {
                     var results = new Dictionary<string, string>();
 
+                    // Renders a reactive component wrapped in ReactiveAuthHost so the seeded
+                    // authentication state cascades to <AuthorizeView> etc. The cascade emits no DOM,
+                    // so the component's ReactiveRoot div stays the outermost element (ValidateBoundary).
+                    async Task<string> RenderAsync(Type componentType, Dictionary<string, object?> componentParams)
+                    {
+                        var hostParams = ParameterView.FromDictionary(new Dictionary<string, object?>
+                        {
+                            [nameof(ReactiveAuthHost.ChildType)] = componentType,
+                            [nameof(ReactiveAuthHost.ChildParameters)] = (IReadOnlyDictionary<string, object?>)componentParams,
+                        });
+                        var output = await renderer.RenderComponentAsync<ReactiveAuthHost>(hostParams);
+                        var html = output.ToHtmlString();
+                        ValidateBoundary(html, componentType);
+                        return html;
+                    }
+
                     // 1. Render the target component first so its action runs and may publish signals.
                     var targetComponent = decryptedComponents.First(c => c.Id == req.TargetId);
                     logger.LogDebug("Dispatching action '{Action}' on target component {Type} (id: {Id}, state: {StateSize} bytes).",
                         req.Action ?? "(bind-only)", targetComponent.Type.Name, targetComponent.Id, targetComponent.StateJson.Length);
 
-                    var targetParams = ParameterView.FromDictionary(new Dictionary<string, object?>
+                    var targetParams = new Dictionary<string, object?>
                     {
                         ["ReactiveState"] = targetComponent.StateJson,
                         ["ReactiveAction"] = req.Action,
                         ["ReactiveArgs"] = req.Args is null ? null : JsonSerializer.Serialize(req.Args),
                         ["ReactiveBindings"] = req.Bindings is null ? null : JsonSerializer.Serialize(req.Bindings),
-                    });
+                    };
 
-                    var targetOutput = await renderer.RenderComponentAsync(targetComponent.Type, targetParams);
-                    var targetHtml = targetOutput.ToHtmlString();
-                    ValidateBoundary(targetHtml, targetComponent.Type);
-                    results[targetComponent.Id] = targetHtml;
+                    results[targetComponent.Id] = await RenderAsync(targetComponent.Type, targetParams);
 
                     // 2. Compute the set of component types subscribed to any signal published by the action.
                     var emitted = signals.PublishedTypes;
@@ -262,15 +351,18 @@ public static class ReactiveEndpointRouteBuilderExtensions
                         if (id == req.TargetId) continue;
                         if (!refreshTypes.Contains(type)) continue;
 
-                        var siblingParams = ParameterView.FromDictionary(new Dictionary<string, object?>
+                        // Never render or return a sibling the current user is not authorized to see.
+                        // Omitting it leaves the client's prior content untouched (it was authorized then);
+                        // if the user lost access, a direct dispatch to that component wipes it via the
+                        // suppressed boundary. ReactiveRoot suppression is the backstop.
+                        if (!authContext.IsComponentAuthorizedCached(type)) continue;
+
+                        var siblingParams = new Dictionary<string, object?>
                         {
                             ["ReactiveState"] = stateJson
-                        });
+                        };
 
-                        var siblingOutput = await renderer.RenderComponentAsync(type, siblingParams);
-                        var siblingHtml = siblingOutput.ToHtmlString();
-                        ValidateBoundary(siblingHtml, type);
-                        results[id] = siblingHtml;
+                        results[id] = await RenderAsync(type, siblingParams);
                         refreshed++;
                     }
 
@@ -309,6 +401,20 @@ public static class ReactiveEndpointRouteBuilderExtensions
         });
 
         return endpoints;
+    }
+
+    /// <summary>
+    /// Returns <c>true</c> when the app has registered at least one authentication scheme. Used to
+    /// decide whether an antiforgery failure on an unauthenticated request should be reported as a
+    /// session-expiry <c>401</c> (auth in play) or a plain <c>400</c> (no auth configured).
+    /// </summary>
+    private static async Task<bool> HasAuthenticationSchemesAsync(IServiceProvider services)
+    {
+        var schemeProvider = services.GetService<Microsoft.AspNetCore.Authentication.IAuthenticationSchemeProvider>();
+        if (schemeProvider is null)
+            return false;
+        var schemes = await schemeProvider.GetAllSchemesAsync();
+        return schemes.Any();
     }
 
     /// <summary>

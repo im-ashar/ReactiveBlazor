@@ -18,6 +18,7 @@ ReactiveBlazor lets you build interactive server-rendered Blazor components that
 - **Request queuing** — Rapid clicks or inputs are serialized per component to prevent race conditions.
 - **Two-way binding** — `data-bind` syncs input values (text, dropdowns, checkboxes, radios) back to component properties.
 - **Debounce support** — `data-debounce="300"` for search and text inputs to reduce network load.
+- **Polling** — components can auto-refresh on a timer (`PollAction` / `PollInterval` on `<ReactiveRoot>`); ticks reuse the normal dispatch pipeline (queuing, signals, morphing), pause on hidden tabs, and start/stop by toggling a state property.
 - **Redirect support** — Set `RedirectUrl` in an action to navigate the browser to a new URL after processing.
 - **Multi-target** — Supports .NET 8, .NET 9, and .NET 10.
 
@@ -85,6 +86,14 @@ Inherit from `ReactiveComponent`, wrap your markup in `<ReactiveRoot>`, and decl
     public void Add(int amount) => Count += amount;
 }
 ```
+
+> [!IMPORTANT]
+> `<ReactiveRoot Owner="this">` must be the component's **single outermost element** — don't render
+> page headers, wrappers, or sibling markup outside it. The client morphs the server-rendered HTML
+> onto the one `data-component` boundary element, so markup outside `ReactiveRoot` causes the
+> component to be nested into itself on update. Put shared chrome in a parent page and make each
+> reactive piece its own component (see the `/notifications` and `/polling` demos). The dispatch
+> endpoint fails fast with a clear error if this invariant is violated.
 
 ---
 
@@ -289,6 +298,58 @@ Or write custom CSS rules:
     transition: opacity 0.2s ease;
 }
 ```
+
+---
+
+## Polling (Auto-Refresh)
+
+Components can refresh themselves on a timer — no user interaction required. Polling is configured on `<ReactiveRoot>` and reuses the entire dispatch pipeline, so each tick benefits from request queuing, out-of-band signal fan-out, and DOM morphing exactly like a click would.
+
+```razor
+@inherits ReactiveBlazor.ReactiveComponent
+@inject MetricsService Metrics
+
+<ReactiveRoot Owner="this" PollAction="Refresh" PollInterval="@(IsLive ? 2000 : 0)">
+    <p>CPU: @Cpu% — updated @LastUpdated</p>
+    <button type="button" data-on-click="ToggleLive">@(IsLive ? "Stop" : "Start")</button>
+</ReactiveRoot>
+
+@code {
+    public bool IsLive { get; set; } = true;
+    public double Cpu { get; set; }
+    public string LastUpdated { get; set; } = "—";
+
+    // Invoked on every poll tick.
+    [ReactiveAction]
+    public void Refresh()
+    {
+        Cpu = Metrics.ReadCpu();
+        LastUpdated = DateTime.Now.ToString("HH:mm:ss");
+    }
+
+    [ReactiveAction]
+    public void ToggleLive() => IsLive = !IsLive;
+}
+```
+
+`<ReactiveRoot>` polling parameters:
+
+| Parameter | Description |
+|---|---|
+| `PollAction` | Name of the `[ReactiveAction]` to invoke on each tick. Polling is on only when this is set **and** `PollInterval > 0`. |
+| `PollInterval` | Interval in milliseconds. `0` (default) disables polling. The client enforces a **250ms floor**. |
+| `PollArgs` | Optional pre-serialized JSON array string of arguments for the poll action (mirrors `data-args`). |
+
+**Start / stop / retune at runtime:** bind `PollInterval` (and/or `PollAction`) to a state property. When `PollInterval` returns to `0`, the poll attributes disappear on the next morph and the client clears the timer automatically — so a component controls its own polling purely through server-side state.
+
+**Behavior:**
+
+- Ticks use `"latest"` queue semantics, so they never pile up — a pending tick supersedes the previous one.
+- A tick is skipped while a dispatch for that component is already in flight.
+- Polling **pauses while the browser tab is hidden** and resumes (without a catch-up burst) when it regains focus.
+- Timers are torn down automatically on page navigation/redirect — no manual cleanup needed.
+
+> The demo project includes a live metrics dashboard at `/polling` with a Start/Stop toggle and an OOB subscriber (`MetricsSampled`) updated by each poll tick.
 
 ---
 

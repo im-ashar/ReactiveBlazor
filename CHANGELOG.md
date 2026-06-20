@@ -5,6 +5,13 @@ All notable changes to ReactiveBlazor will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.0] — 2026-06-20
+
+### Added
+- **Polling (periodic auto-refresh)** — components can refresh themselves on a timer with no user interaction. Set `PollAction` and `PollInterval` (ms) on `<ReactiveRoot>`; each tick fires the named action through the normal dispatch pipeline, so polling reuses request queuing, OOB signal fan-out, and DOM morphing. Bind `PollInterval` to a state property to start/stop or retune polling at runtime — when it returns to `0` the timer is cleared automatically on the next morph. Optional `PollArgs` (JSON array string) passes arguments to the poll action.
+  - Client enforces a **250ms minimum interval**, uses `"latest"` queue semantics (ticks never pile up), **skips ticks while a dispatch is in flight**, and **pauses polling while the browser tab is hidden** (resuming on focus).
+  - New `/polling` demo: a live metrics dashboard with a Start/Stop toggle and an OOB activity-log subscriber updated by each tick.
+
 ## [1.0.0] — 2026-06-04
 
 ### Added

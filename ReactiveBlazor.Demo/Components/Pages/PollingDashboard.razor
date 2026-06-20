@@ -1,0 +1,85 @@
+@inherits ReactiveBlazor.ReactiveComponent
+@inject ReactiveBlazor.Demo.Services.SystemMetricsService Metrics
+
+@* The ReactiveRoot must be this component's single root element: the server re-renders the
+   whole component on each dispatch, and the client morphs it onto the data-component div. *@
+<ReactiveRoot Owner="this" PollAction="Sample" PollInterval="@(IsLive ? PollMs : 0)">
+    <div class="card bg-base-100 border border-accent/40 shadow-sm">
+        <div class="card-body p-5">
+            <div class="flex items-center justify-between mb-3">
+                <div>
+                    <h3 class="font-bold text-base">System Metrics</h3>
+                    <p class="text-[11px] text-base-content/50 font-mono mt-0.5">
+                        @(IsLive ? $"polling every {PollMs}ms" : "polling stopped")
+                    </p>
+                </div>
+                <div class="flex items-center gap-2">
+                    <span class="inline-flex h-2.5 w-2.5 rounded-full @(IsLive ? "bg-success animate-pulse" : "bg-base-300")"></span>
+                    <span class="text-xs text-base-content/60">@(IsLive ? "LIVE" : "PAUSED")</span>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-3 gap-3 text-center">
+                <div class="rounded-lg bg-base-200/60 p-3">
+                    <div class="text-2xl font-black tabular-nums text-accent">@Cpu.ToString("0.0")<span class="text-sm">%</span></div>
+                    <div class="text-[11px] text-base-content/50 mt-1">CPU</div>
+                </div>
+                <div class="rounded-lg bg-base-200/60 p-3">
+                    <div class="text-2xl font-black tabular-nums text-primary">@MemoryMb.ToString("0")</div>
+                    <div class="text-[11px] text-base-content/50 mt-1">MEM (MB)</div>
+                </div>
+                <div class="rounded-lg bg-base-200/60 p-3">
+                    <div class="text-2xl font-black tabular-nums text-secondary">@RequestsPerSec</div>
+                    <div class="text-[11px] text-base-content/50 mt-1">REQ/s</div>
+                </div>
+            </div>
+
+            <div class="flex items-center justify-between mt-4">
+                <button type="button"
+                        class="btn btn-sm @(IsLive ? "btn-outline btn-error" : "btn-accent")"
+                        data-on-click="ToggleLive">
+                    @(IsLive ? "Stop polling" : "Start polling")
+                </button>
+                <span class="text-[11px] text-base-content/50 font-mono">
+                    Last updated: <span class="text-success">@LastUpdated</span>
+                </span>
+            </div>
+        </div>
+    </div>
+</ReactiveRoot>
+
+@code {
+    // The poll cadence in ms. Surfaced as a property so the markup and the binding agree.
+    [ReactiveIgnore]
+    public int PollMs => 2000;
+
+    public bool IsLive { get; set; } = true;
+    public double Cpu { get; set; }
+    public double MemoryMb { get; set; }
+    public int RequestsPerSec { get; set; }
+    public string LastUpdated { get; set; } = "—";
+
+    protected override void OnInitialized()
+    {
+        // Seed the dashboard with an initial sample on first render.
+        if (LastUpdated == "—")
+            Sample();
+    }
+
+    /// <summary>Invoked on every poll tick (and once on initial render).</summary>
+    [ReactiveAction]
+    public void Sample()
+    {
+        var s = Metrics.Read();
+        Cpu = s.Cpu;
+        MemoryMb = s.MemoryMb;
+        RequestsPerSec = s.RequestsPerSec;
+        LastUpdated = s.At.ToString("HH:mm:ss");
+
+        // Fan out to OOB subscribers (the activity log).
+        ReactiveSignals.Publish(new MetricsSampled(s.Cpu, s.At));
+    }
+
+    [ReactiveAction]
+    public void ToggleLive() => IsLive = !IsLive;
+}

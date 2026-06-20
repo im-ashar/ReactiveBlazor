@@ -2,7 +2,7 @@
 // Version is injected by the server at render time via the
 // <meta name="reactive-version"> tag emitted by <ReactiveScripts />.
 // Handles: dispatch, request queuing, DOM morphing (Idiomorph), busy state,
-//          error handling, debounce, redirect, retry, and generic data-on-* events.
+//          error handling, debounce, throttle, redirect, retry, and generic data-on-* events.
 //
 // Queue behavior:
 //   By default, rapid dispatches for the same component keep only the latest pending
@@ -42,6 +42,13 @@
   // ---- Per-component request queues ----
   // Key = component element id.
   var queues = {};
+
+  // ---- Per-component dispatch sequence ----
+  // Key = component element id. Monotonic counter, bumped on every dispatch start. Used to drop
+  // a morph whose response arrives after a newer dispatch for the same component has been issued,
+  // so a slow round-trip can't overwrite the DOM with stale state (e.g. an input the user has
+  // since typed more into). A counter is immune to clock skew, unlike a timestamp.
+  var dispatchSeq = {};
 
   // ---- Polling ----
   // Key = component element id. One poller per component (attributes live on the root div).
@@ -125,6 +132,11 @@
     root = document.getElementById(root.id);
     if (!root) return;
 
+    var rootId = root.id;
+    // Claim the latest sequence for this component. Any response that completes after a newer
+    // dispatch starts will see seq !== dispatchSeq[rootId] and bail before morphing.
+    var seq = (dispatchSeq[rootId] = (dispatchSeq[rootId] || 0) + 1);
+
     // Collect all active components on the page. Skip authorization-suppressed boundaries:
     // a denied component renders as <div data-component data-reactive-denied> with NO data-state,
     // so it is a morph placeholder, not a dispatch participant. Including it would post a null
@@ -174,6 +186,14 @@
       }
 
       var updates = await res.json();
+
+      // Stale-guard: a newer dispatch for this component superseded us while we were in flight.
+      // Drop this morph so we don't overwrite the DOM (and the focused input) with stale state.
+      if (seq !== dispatchSeq[rootId]) {
+        clearBusy(document.getElementById(rootId) || root);
+        return;
+      }
+
       var redirectUrl = null;
 
       // Check for server-side redirects in any of the returned HTML components
@@ -205,7 +225,13 @@
         if (!incoming) continue;
 
         if (window.Idiomorph) {
-          Idiomorph.morph(target, incoming, { morphStyle: "outerHTML" });
+          // ignoreActiveValue: don't overwrite the `value` of the currently-focused input/textarea.
+          // The browser already holds the user's latest keystrokes there; the server's echoed value
+          // is necessarily one round-trip stale. Everything else in the component still morphs.
+          Idiomorph.morph(target, incoming, {
+            morphStyle: "outerHTML",
+            ignoreActiveValue: true
+          });
         } else {
           target.replaceWith(incoming);
         }
@@ -268,6 +294,35 @@
     debounceTimers[key] = setTimeout(function () {
       dispatch(root, action, args, queueMode);
     }, ms);
+  }
+
+  // ---- Throttle ----
+  // Unlike debounce (which waits for a pause in typing), throttle dispatches at a steady cadence
+  // during sustained input: leading edge fires immediately, then at most once per `ms`. A trailing
+  // call is always scheduled so the final keystroke is never dropped.
+
+  var throttleState = {}; // key -> { last: ms, timer }
+
+  function throttled(root, action, args, ms, queueMode) {
+    var key = root.id + ":" + (action || "");
+    var now = performance.now();
+    var st = throttleState[key] || (throttleState[key] = { last: 0, timer: null });
+    var remaining = ms - (now - st.last);
+
+    if (remaining <= 0) {
+      clearTimeout(st.timer);
+      st.timer = null;
+      st.last = now;
+      dispatch(root, action, args, queueMode);
+    } else {
+      // Trailing edge: ensure the latest values are sent once the window elapses.
+      clearTimeout(st.timer);
+      st.timer = setTimeout(function () {
+        st.last = performance.now();
+        st.timer = null;
+        dispatch(root, action, args, queueMode);
+      }, remaining);
+    }
   }
 
   // ---- Pollers (periodic auto-refresh) ----
@@ -370,10 +425,13 @@
       var action = trigger.getAttribute(attr) || null;
       var args = parseArgs(trigger);
       var debounceMs = parseInt(trigger.getAttribute("data-debounce"), 10);
+      var throttleMs = parseInt(trigger.getAttribute("data-throttle"), 10);
       var queueMode = trigger.getAttribute("data-queue") || "latest";
 
       if (debounceMs > 0) {
         debounced(root, action, args, debounceMs, queueMode);
+      } else if (throttleMs > 0) {
+        throttled(root, action, args, throttleMs, queueMode);
       } else {
         dispatch(root, action, args, queueMode);
       }

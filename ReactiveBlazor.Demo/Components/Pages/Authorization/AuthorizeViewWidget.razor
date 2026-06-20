@@ -1,0 +1,50 @@
+@inherits ReactiveBlazor.ReactiveComponent
+
+@*
+    <AuthorizeView> works INSIDE a reactive component during dispatch. ReactiveBlazor seeds the
+    authentication state from HttpContext.User into the render, so the right branch shows after a
+    morph — not just on the initial page load. Click "Refresh" and the correct branch re-renders.
+*@
+
+<ReactiveRoot Owner="this">
+    <div class="card bg-base-100 border border-secondary/40 shadow-sm" id="authorizeview-widget">
+        <div class="card-body p-5 space-y-3">
+            <div class="flex items-center justify-between">
+                <h3 class="font-bold text-base">&lt;AuthorizeView&gt; during dispatch</h3>
+                <span class="badge badge-sm badge-secondary badge-outline font-mono">cascading auth state</span>
+            </div>
+
+            <AuthorizeView>
+                <Authorized>
+                    <div class="alert alert-success py-2 text-sm">
+                        <span>Signed in as <strong>@context.User.Identity?.Name</strong>.</span>
+                    </div>
+                    <AuthorizeView Roles="Admin">
+                        <Authorized Context="adminCtx">
+                            <div class="alert alert-info py-2 text-xs">Admin-only content (nested AuthorizeView).</div>
+                        </Authorized>
+                    </AuthorizeView>
+                </Authorized>
+                <NotAuthorized>
+                    <div class="alert alert-warning py-2 text-sm">
+                        <span>You are signed out. Sign in to see personalized content.</span>
+                    </div>
+                </NotAuthorized>
+            </AuthorizeView>
+
+            <div class="flex items-center gap-2">
+                <button class="btn btn-secondary btn-sm" type="button" data-on-click="Refresh">Refresh (re-render)</button>
+                <span class="text-[11px] text-base-content/50 font-mono">Rendered: @RenderedAt</span>
+            </div>
+        </div>
+    </div>
+</ReactiveRoot>
+
+@code {
+    public string RenderedAt { get; set; } = "";
+
+    protected override void OnInitialized() => RenderedAt = DateTime.Now.ToString("HH:mm:ss.fff");
+
+    [ReactiveAction]
+    public void Refresh() { /* state mutation not needed; OnInitialized restamps the timestamp */ }
+}

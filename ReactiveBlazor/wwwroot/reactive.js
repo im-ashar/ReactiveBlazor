@@ -29,6 +29,16 @@
     return m ? m.getAttribute("content") : "";
   }
 
+  function reloadOnUnauthorized() {
+    var m = document.querySelector('meta[name="reactive-reload-on-401"]');
+    // Default to true when the meta tag is absent (matches ReactiveOptions default).
+    return !m || m.getAttribute("content") !== "false";
+  }
+
+  // Set once a 401 triggers a full-page reload, so no further dispatches/polls fire in the
+  // brief window before navigation completes.
+  var reloading = false;
+
   // ---- Per-component request queues ----
   // Key = component element id.
   var queues = {};
@@ -110,16 +120,22 @@
   }
 
   async function doDispatch(root, action, args) {
+    if (reloading) return; // a 401 reload is in flight; don't start new requests
     // Re-query root by id in case it was replaced by a previous morph.
     root = document.getElementById(root.id);
     if (!root) return;
 
-    // Collect all active components on the page
+    // Collect all active components on the page. Skip authorization-suppressed boundaries:
+    // a denied component renders as <div data-component data-reactive-denied> with NO data-state,
+    // so it is a morph placeholder, not a dispatch participant. Including it would post a null
+    // state token and the server would reject the whole batch ("State token is missing").
     var components = [];
     document.querySelectorAll("[data-component]").forEach(function (el) {
+      var state = el.getAttribute("data-state");
+      if (!state) return; // denied/placeholder boundary — not dispatchable
       components.push({
         id: el.id,
-        state: el.getAttribute("data-state")
+        state: state
       });
     });
 
@@ -138,6 +154,15 @@
       var res = await fetchWithRetry(body);
 
       if (!res.ok) {
+        // 401: the user's session/cookie expired or they are unauthenticated. Stop pollers and
+        // full-page reload the current URL so the app's auth pipeline issues its login redirect
+        // (with returnUrl). 403 and other errors are surfaced as reactive:error below.
+        if (res.status === 401 && reloadOnUnauthorized()) {
+          reloading = true;
+          clearAllPollers();
+          window.location.assign(window.location.href);
+          return;
+        }
         var errorText = await res.text();
         console.error("ReactiveBlazor dispatch failed:", res.status, errorText);
         clearBusy(root);
@@ -273,6 +298,7 @@
 
   function pollTick(id) {
     return function () {
+      if (reloading) return; // a 401 reload is in flight; stop polling
       // Re-query by id: a morph (or the replaceWith fallback) may have replaced the node.
       var root = document.getElementById(id);
       if (!root) { clearPoller(id); return; }     // component gone

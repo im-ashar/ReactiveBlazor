@@ -1,6 +1,9 @@
 using Microsoft.AspNetCore.DataProtection;
+using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using System.Security.Claims;
 using System.Security.Cryptography;
 
 namespace ReactiveBlazor.Tests;
@@ -242,5 +245,119 @@ public class ReactiveStateCodecTests
         Assert.Equal(2, props.Length);
         Assert.Contains(props, p => p.Name == "SerializedValue");
         Assert.Contains(props, p => p.Name == "UnserializedValue");
+    }
+
+    // ── User binding (BindStateToUser) tests ────────────────────────────────
+
+    // Per-instance accessor. The real HttpContextAccessor stores HttpContext in a static AsyncLocal,
+    // so multiple instances in one test thread would clobber each other — here each codec needs its
+    // own fixed context to simulate distinct concurrent requests.
+    private sealed class FixedHttpContextAccessor(HttpContext? context) : IHttpContextAccessor
+    {
+        public HttpContext? HttpContext { get; set; } = context;
+    }
+
+    // Builds a codec with BindStateToUser on and a controllable current user, sharing a
+    // Data Protection key ring so two codecs (different users) can decode each other's tokens.
+    private static ReactiveStateCodec BuildBoundCodec(IDataProtectionProvider dp, string? userId)
+    {
+        var registry = new ReactiveComponentRegistry();
+        registry.Register(typeof(CounterComponent));
+        registry.Freeze();
+
+        var opts = Options.Create(new ReactiveOptions { BindStateToUser = true });
+        var logger = LoggerFactory.Create(_ => { }).CreateLogger<ReactiveStateCodec>();
+
+        var ctx = new DefaultHttpContext();
+        if (userId is not null)
+            ctx.User = new ClaimsPrincipal(new ClaimsIdentity(
+                [new Claim(ClaimTypes.NameIdentifier, userId)], "TestAuth"));
+
+        return new ReactiveStateCodec(dp, registry, logger, opts, new FixedHttpContextAccessor(ctx));
+    }
+
+    private static IDataProtectionProvider SharedDp() =>
+        new ServiceCollection().AddDataProtection().Services
+            .BuildServiceProvider().GetRequiredService<IDataProtectionProvider>();
+
+    [Fact]
+    public void Bound_SameUser_RoundTripsState()
+    {
+        var dp = SharedDp();
+        var codec = BuildBoundCodec(dp, "user-A");
+
+        var token = codec.Protect(typeof(CounterComponent), """{"Count":7}""");
+        var (_, json, _) = codec.Unprotect(token);
+
+        Assert.Equal("""{"Count":7}""", json);
+    }
+
+    [Fact]
+    public void Bound_DifferentUser_ReplayResetsToDefaultState()
+    {
+        // User A's token, replayed by user B, must not load A's state — it resets to "{}".
+        var dp = SharedDp();
+        var codecA = BuildBoundCodec(dp, "user-A");
+        var codecB = BuildBoundCodec(dp, "user-B");
+
+        var tokenA = codecA.Protect(typeof(CounterComponent), """{"Count":42}""");
+        var (type, json, _) = codecB.Unprotect(tokenA);
+
+        Assert.Equal(typeof(CounterComponent), type);
+        Assert.Equal("{}", json); // cross-user replay → reset, A's data not exposed
+    }
+
+    [Fact]
+    public void Bound_Anonymous_RoundTripsAmongAnonymous()
+    {
+        var dp = SharedDp();
+        var anon1 = BuildBoundCodec(dp, userId: null);
+        var anon2 = BuildBoundCodec(dp, userId: null);
+
+        var token = anon1.Protect(typeof(CounterComponent), """{"Count":3}""");
+        var (_, json, _) = anon2.Unprotect(token);
+
+        // All anonymous requests share one "no user" tag, so the round-trip succeeds.
+        Assert.Equal("""{"Count":3}""", json);
+    }
+
+    [Fact]
+    public void Bound_AnonymousToken_RejectedForAuthenticatedUser()
+    {
+        var dp = SharedDp();
+        var anon = BuildBoundCodec(dp, userId: null);
+        var authed = BuildBoundCodec(dp, "user-A");
+
+        var token = anon.Protect(typeof(CounterComponent), """{"Count":9}""");
+        var (_, json, _) = authed.Unprotect(token);
+
+        Assert.Equal("{}", json); // anonymous-issued token can't be claimed by a signed-in user
+    }
+
+    [Fact]
+    public void Off_ByDefault_TokenContainsNoUserBinding()
+    {
+        // With binding off (default), two different users round-trip each other's tokens —
+        // proving the off-path is unchanged and carries no identity.
+        var dp = SharedDp();
+
+        ReactiveStateCodec MakeUnbound(string userId)
+        {
+            var registry = new ReactiveComponentRegistry();
+            registry.Register(typeof(CounterComponent));
+            registry.Freeze();
+            var opts = Options.Create(new ReactiveOptions()); // BindStateToUser = false
+            var logger = LoggerFactory.Create(_ => { }).CreateLogger<ReactiveStateCodec>();
+            var ctx = new DefaultHttpContext
+            {
+                User = new ClaimsPrincipal(new ClaimsIdentity([new Claim(ClaimTypes.NameIdentifier, userId)], "TestAuth"))
+            };
+            return new ReactiveStateCodec(dp, registry, logger, opts, new FixedHttpContextAccessor(ctx));
+        }
+
+        var token = MakeUnbound("user-A").Protect(typeof(CounterComponent), """{"Count":5}""");
+        var (_, json, _) = MakeUnbound("user-B").Unprotect(token);
+
+        Assert.Equal("""{"Count":5}""", json); // no binding → user identity irrelevant
     }
 }

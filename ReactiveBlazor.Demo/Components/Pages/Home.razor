@@ -199,6 +199,40 @@
                     <NavLink href="/notifications" class="btn btn-secondary btn-sm btn-block">Explore Multi-Signal Demo</NavLink>
                 </div>
             </div>
+
+            <!-- Authorization Card -->
+            <div class="card bg-base-100 border border-base-300 shadow-sm flex flex-col justify-between hover:shadow-md hover:border-primary/20 transition-all duration-300">
+                <div class="card-body p-6">
+                    <div class="flex items-center gap-2 mb-2">
+                        <span class="badge badge-sm badge-error badge-outline">Security</span>
+                        <span class="text-[10px] text-base-content/40">[Authorize]</span>
+                    </div>
+                    <h3 class="card-title text-base font-bold text-base-content">Declarative Authorization</h3>
+                    <p class="text-xs text-base-content/60 leading-relaxed mt-1">
+                        Use the framework's own <code class="text-error">[Authorize]</code> / <code class="text-error">[AllowAnonymous]</code> on actions and components. Roles, policies, and <code class="text-error">&lt;AuthorizeView&gt;</code> all work — denied components emit no state token, and unauthorized signal siblings are never returned.
+                    </p>
+                </div>
+                <div class="p-5 pt-0">
+                    <NavLink href="/authorization" class="btn btn-error btn-sm btn-block">Explore Authorization</NavLink>
+                </div>
+            </div>
+
+            <!-- Token Replay Lab Card -->
+            <div class="card bg-base-100 border border-base-300 shadow-sm flex flex-col justify-between hover:shadow-md hover:border-primary/20 transition-all duration-300">
+                <div class="card-body p-6">
+                    <div class="flex items-center gap-2 mb-2">
+                        <span class="badge badge-sm badge-error badge-outline">Security</span>
+                        <span class="text-[10px] text-base-content/40">BindStateToUser</span>
+                    </div>
+                    <h3 class="card-title text-base font-bold text-base-content">Token Replay Lab</h3>
+                    <p class="text-xs text-base-content/60 leading-relaxed mt-1">
+                        Capture an encrypted state token as one user, switch users, and replay it. With <code class="text-error">BindStateToUser</code> on, the component resets instead of leaking the first user's data — see the cross-user replay defense live.
+                    </p>
+                </div>
+                <div class="p-5 pt-0">
+                    <NavLink href="/replay-lab" class="btn btn-error btn-sm btn-block">Open Replay Lab</NavLink>
+                </div>
+            </div>
         </div>
     </div>
 </div>

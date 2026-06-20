@@ -49,15 +49,22 @@ public sealed class ReactiveScripts : ComponentBase
         builder.AddAttribute(8, "content", ReactiveBlazorVersion.Current);
         builder.CloseElement();
 
+        // Reload-on-401 behavior meta tag (consumed by reactive.js). When "true", an unauthenticated
+        // dispatch triggers a full-page reload so the app's login redirect fires.
+        builder.OpenElement(9, "meta");
+        builder.AddAttribute(10, "name", "reactive-reload-on-401");
+        builder.AddAttribute(11, "content", Options.Value.ReloadOnUnauthorized ? "true" : "false");
+        builder.CloseElement();
+
         // Idiomorph (must load before reactive.js)
-        builder.OpenElement(9, "script");
-        builder.AddAttribute(10, "src", "/_content/ReactiveBlazor/idiomorph.min.js");
+        builder.OpenElement(12, "script");
+        builder.AddAttribute(13, "src", "/_content/ReactiveBlazor/idiomorph.min.js");
         builder.CloseElement();
 
         // ReactiveBlazor client runtime
-        builder.OpenElement(11, "script");
-        builder.AddAttribute(12, "src", ScriptPath);
-        builder.AddAttribute(13, "defer", true);
+        builder.OpenElement(14, "script");
+        builder.AddAttribute(15, "src", ScriptPath);
+        builder.AddAttribute(16, "defer", true);
         builder.CloseElement();
     }
 }

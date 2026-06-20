@@ -1,0 +1,117 @@
+@page "/authorization"
+
+<PageTitle>Declarative Authorization - ReactiveBlazor</PageTitle>
+
+<div class="space-y-6">
+    <!-- Page header -->
+    <div class="flex flex-col md:flex-row md:items-center justify-between border-b border-base-300 pb-4 gap-4">
+        <div>
+            <h1 class="text-3xl font-bold text-base-content">Declarative Authorization</h1>
+            <p class="text-sm text-base-content/60 mt-1">
+                Standard <code>[Authorize]</code> / <code>[AllowAnonymous]</code> on reactive actions and
+                components — evaluated by ASP.NET Core's own authorization services. No custom attributes.
+            </p>
+        </div>
+        <div class="badge badge-primary badge-outline font-semibold gap-2 py-3 px-4">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+            </svg>
+            [Authorize] Demo
+        </div>
+    </div>
+
+    <!-- Identity bar -->
+    <AuthorizeView>
+        <Authorized>
+            <div class="alert bg-base-100 border border-base-300 flex-col sm:flex-row items-start sm:items-center gap-3">
+                <div class="flex-1">
+                    <div class="text-sm">Signed in as <strong>@context.User.Identity?.Name</strong></div>
+                    <div class="flex gap-1 flex-wrap mt-1">
+                        @foreach (var role in context.User.FindAll(System.Security.Claims.ClaimTypes.Role))
+                        {
+                            <span class="badge badge-sm badge-primary">@role.Value</span>
+                        }
+                        @{ var dept = context.User.FindFirst("department")?.Value; }
+                        @if (!string.IsNullOrEmpty(dept))
+                        {
+                            <span class="badge badge-sm badge-success">department: @dept</span>
+                        }
+                    </div>
+                </div>
+                <div class="flex gap-2">
+                    <a class="btn btn-ghost btn-sm" href="/login">Switch persona</a>
+                    <a class="btn btn-outline btn-sm" href="/auth/signout?returnUrl=/authorization">Sign out</a>
+                </div>
+            </div>
+        </Authorized>
+        <NotAuthorized>
+            <div class="alert alert-warning flex-col sm:flex-row items-start sm:items-center gap-3">
+                <span class="flex-1 text-sm">You are not signed in. Pick a persona to explore authorization behavior.</span>
+                <a class="btn btn-sm btn-primary" href="/login?ReturnUrl=/authorization">Sign in</a>
+            </div>
+        </NotAuthorized>
+    </AuthorizeView>
+
+    <!-- Signal target + admin-only sibling live on the same page so the OOB fan-out works -->
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <AdminActionPanel />
+        <AuditLogSibling />
+    </div>
+
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <BillingWidget />
+        <AuthorizeViewWidget />
+    </div>
+
+    <!-- Behavior matrix -->
+    <div class="card bg-base-100 border border-base-300 shadow-sm">
+        <div class="card-body p-5">
+            <h3 class="font-bold text-base mb-3">What each persona sees</h3>
+            <div class="overflow-x-auto">
+                <table class="table table-sm">
+                    <thead>
+                        <tr>
+                            <th>Persona</th>
+                            <th>Privileged action</th>
+                            <th>Billing widget</th>
+                            <th>Audit log sibling</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><strong>Alice Admin</strong> <span class="text-xs text-base-content/50">(Admin, finance)</span></td>
+                            <td class="text-success">runs</td>
+                            <td class="text-success">visible</td>
+                            <td class="text-success">refreshes</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Fiona Finance</strong> <span class="text-xs text-base-content/50">(User, finance)</span></td>
+                            <td class="text-error">403</td>
+                            <td class="text-success">visible</td>
+                            <td class="text-base-content/50">omitted</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Uri User</strong> <span class="text-xs text-base-content/50">(User, sales)</span></td>
+                            <td class="text-error">403</td>
+                            <td class="text-base-content/50">hidden (no token)</td>
+                            <td class="text-base-content/50">omitted</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Guest</strong> / signed out</td>
+                            <td class="text-warning">401 → reload to login</td>
+                            <td class="text-base-content/50">hidden (no token)</td>
+                            <td class="text-base-content/50">omitted</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+            <p class="text-xs text-base-content/60 mt-3">
+                Tip: open DevTools → Network and inspect a dispatch. A denied component returns
+                <code>&lt;div data-reactive-denied&gt;</code> with <strong>no</strong> <code>data-state</code>;
+                an unauthorized signal sibling is omitted from the JSON entirely. When your 2-minute
+                cookie expires, the next click returns <strong>401</strong> and the page reloads to the
+                login screen automatically.
+            </p>
+        </div>
+    </div>
+</div>

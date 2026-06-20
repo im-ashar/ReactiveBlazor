@@ -1,22 +1,15 @@
-using ReactiveBlazor.Demo.Components;
-using Microsoft.AspNetCore.DataProtection;
 using ReactiveBlazor;
+using ReactiveBlazor.Demo.Components;
+using ReactiveBlazor.Demo.Extensions;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Add services to the container.
-builder.Services.AddRazorComponents();
-builder.Services.AddDataProtection()
-    .PersistKeysToFileSystem(new DirectoryInfo(Path.Combine(builder.Environment.ContentRootPath, "keys")));
-builder.Services.AddReactiveComponents(assemblies: typeof(Program).Assembly);
-builder.Services.AddSingleton<ReactiveBlazor.Demo.Services.ProductService>();
-builder.Services.AddSingleton<ReactiveBlazor.Demo.Services.CartService>();
-builder.Services.AddSingleton<ReactiveBlazor.Demo.Services.NotificationService>();
-builder.Services.AddSingleton<ReactiveBlazor.Demo.Services.SystemMetricsService>();
+builder.Services
+    .AddReactiveBlazorDemo(builder.Environment)
+    .AddDemoAuthentication();
 
 var app = builder.Build();
 
-// Configure the HTTP request pipeline.
 if (!app.Environment.IsDevelopment())
 {
     app.UseExceptionHandler("/Error", createScopeForErrors: true);
@@ -24,9 +17,13 @@ if (!app.Environment.IsDevelopment())
 }
 
 app.UseHttpsRedirection();
+app.UseAuthentication();
+app.UseAuthorization();
 app.UseAntiforgery();
 
 app.MapStaticAssets();
 app.MapRazorComponents<App>();
 app.MapReactiveComponents();
+app.MapDemoAuthEndpoints();
+
 app.Run();

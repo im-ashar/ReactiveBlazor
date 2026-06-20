@@ -55,6 +55,20 @@ public sealed class ReactiveRoot : ComponentBase
     /// <inheritdoc />
     protected override void BuildRenderTree(RenderTreeBuilder builder)
     {
+        // Component-level authorization denied (decided in ReactiveComponent.SetParametersAsync).
+        // Emit the boundary div so the client morph still has a target by id (wiping any previously
+        // rendered authorized content), but with NO state token and NO child content — nothing
+        // sensitive leaves the server and the component cannot be re-dispatched.
+        if (Owner.IsAuthorizationDenied)
+        {
+            builder.OpenElement(0, "div");
+            builder.AddAttribute(1, "id", Owner.ComponentId);
+            builder.AddAttribute(2, "data-component", Owner.GetType().Name);
+            builder.AddAttribute(3, "data-reactive-denied", "");
+            builder.CloseElement();
+            return;
+        }
+
         var state = Codec.Protect(Owner.GetType(), Owner.SerializeState());
 
         builder.OpenElement(0, "div");

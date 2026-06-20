@@ -51,4 +51,34 @@ public sealed class ReactiveOptions
     /// Default: <c>false</c> (opt-out model).
     /// </summary>
     public bool RequireOptInState { get; set; } = false;
+
+    /// <summary>
+    /// When <c>true</c> (the default), a dispatch that returns <c>401 Unauthorized</c> (the user's
+    /// session/cookie expired or they are not authenticated) causes the client runtime to stop
+    /// polling and perform a full-page reload of the current URL. The app's normal ASP.NET Core
+    /// authentication pipeline then issues its configured login redirect (with <c>returnUrl</c>).
+    /// Set to <c>false</c> to instead surface a <c>reactive:error</c> event for the app to handle.
+    /// </summary>
+    public bool ReloadOnUnauthorized { get; set; } = true;
+
+    /// <summary>
+    /// When <c>true</c>, each state token is cryptographically bound to the identity of the user it
+    /// was issued to (a hash of the authenticated user's stable id claim). On the next dispatch the
+    /// token is only accepted for the <em>same</em> user; if a different user replays it — e.g. a
+    /// token copied from another session via a shared/kiosk machine, screen share, or a support
+    /// attachment — the component silently resets to default state instead of loading the original
+    /// user's data. Anonymous users share a single "no user" binding.
+    /// <para>
+    /// This closes a cross-user <em>state-data</em> replay vector. It does not affect authorization
+    /// (every dispatch is already re-authorized against the live <c>HttpContext.User</c>), so leaving
+    /// it off never enables privilege escalation.
+    /// </para>
+    /// <para>
+    /// Default: <c>false</c>. Enabling it changes the token format and means tokens stop working when
+    /// the user signs in, out, or switches accounts (the component resets) — desirable for
+    /// authenticated apps, unnecessary for fully anonymous ones. Overhead is negligible: one short
+    /// hash computed once per request and reused across every component on the page.
+    /// </para>
+    /// </summary>
+    public bool BindStateToUser { get; set; } = false;
 }

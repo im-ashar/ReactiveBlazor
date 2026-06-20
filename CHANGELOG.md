@@ -5,6 +5,20 @@ All notable changes to ReactiveBlazor will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.6.0] — 2026-06-20
+
+### Added
+- **Declarative authorization** — ReactiveBlazor now honors the framework's standard `[Authorize]` and `[AllowAnonymous]` attributes on both `[ReactiveAction]` methods and `ReactiveComponent` subclasses. Evaluated through the app's own `IAuthorizationService` / `IAuthorizationPolicyProvider`, so roles, named policies, authentication schemes, and custom requirements behave exactly as in MVC/SignalR. No new attributes are introduced; the library leverages the existing ASP.NET Core authorization pipeline and never replaces it.
+  - **Action-level**: authorized on the server before the action runs. Unauthenticated → `401`, authenticated-but-denied → `403` (matching ASP.NET semantics). Authorization **fails closed** — a missing policy or throwing handler denies access without leaking a `500`.
+  - **Component-level**: enforced on *every* render path (initial SSR, action dispatch, and signal-driven sibling refresh). A denied component renders an empty boundary with **no state token and no content**, and its actions never run. Unauthorized signal-refreshed siblings are omitted from the response entirely.
+  - **`<AuthorizeView>` / cascading auth state** work inside reactive components during dispatch — the current user is seeded from `HttpContext.User` into the dispatch renderer.
+- **Session-expiry handling** — when authentication lapses while idle, the next action/poll returns `401`; the client runtime stops polling and full-page-reloads so the app's normal login redirect (with `returnUrl`) fires. Controlled by the new `ReactiveOptions.ReloadOnUnauthorized` option (default `true`); set to `false` to handle `401` via the `reactive:error` event instead.
+- **Cross-user state-token binding** — new opt-in `ReactiveOptions.BindStateToUser` (default `false`) binds each encrypted state token to the user it was issued to (a hash of their stable id claim). A token replayed under a different identity silently resets the component to default state instead of loading the original user's data, closing a cross-user state-data confidentiality gap on shared/kiosk machines, screen shares, or support attachments. Not an authorization control (dispatches are already re-authorized against the live user); overhead is one short hash computed once per request plus 16 bytes per token.
+
+### Fixed
+- **Authorization-suppressed components no longer break sibling dispatches** — the client runtime skips boundaries rendered without a state token (denied components), so clicking any action on a page containing a denied component no longer fails the whole batch with a `400 "State token is missing"`.
+- **Idle-expiry returns `401`, not `400`** — when an antiforgery token (bound to the prior user) fails validation on a now-unauthenticated request in an auth-enabled app, the endpoint returns `401` so the client reloads to login, instead of a dead-end `400`.
+
 ## [1.5.0] — 2026-06-20
 
 ### Added

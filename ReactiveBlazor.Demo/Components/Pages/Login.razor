@@ -1,0 +1,76 @@
+@page "/login"
+@using Microsoft.AspNetCore.WebUtilities
+
+<PageTitle>Sign in - ReactiveBlazor Demo</PageTitle>
+
+<div class="max-w-2xl mx-auto space-y-6">
+    <div class="text-center space-y-2">
+        <h1 class="text-3xl font-bold text-base-content">Choose a demo persona</h1>
+        <p class="text-sm text-base-content/60">
+            No passwords — this demo signs you in with a cookie carrying different roles/claims so you
+            can watch declarative <code>[Authorize]</code> behave on reactive components.
+        </p>
+    </div>
+
+    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <a class="card bg-base-100 border border-primary/40 shadow-sm hover:shadow-md transition" href="@SignInHref("admin")">
+            <div class="card-body p-5">
+                <h3 class="font-bold text-base">Alice Admin</h3>
+                <div class="flex gap-1 flex-wrap mt-1">
+                    <span class="badge badge-sm badge-primary">Admin</span>
+                    <span class="badge badge-sm badge-success">finance</span>
+                </div>
+                <p class="text-xs text-base-content/60 mt-2">Sees everything: privileged action, billing, audit log.</p>
+            </div>
+        </a>
+
+        <a class="card bg-base-100 border border-success/40 shadow-sm hover:shadow-md transition" href="@SignInHref("finance")">
+            <div class="card-body p-5">
+                <h3 class="font-bold text-base">Fiona Finance</h3>
+                <div class="flex gap-1 flex-wrap mt-1">
+                    <span class="badge badge-sm badge-neutral">User</span>
+                    <span class="badge badge-sm badge-success">finance</span>
+                </div>
+                <p class="text-xs text-base-content/60 mt-2">Sees billing (policy), but the admin action returns 403.</p>
+            </div>
+        </a>
+
+        <a class="card bg-base-100 border border-base-300 shadow-sm hover:shadow-md transition" href="@SignInHref("user")">
+            <div class="card-body p-5">
+                <h3 class="font-bold text-base">Uri User</h3>
+                <div class="flex gap-1 flex-wrap mt-1">
+                    <span class="badge badge-sm badge-neutral">User</span>
+                    <span class="badge badge-sm badge-ghost">sales</span>
+                </div>
+                <p class="text-xs text-base-content/60 mt-2">Authenticated, but no admin role and no finance claim.</p>
+            </div>
+        </a>
+
+        <a class="card bg-base-100 border border-base-300 shadow-sm hover:shadow-md transition" href="@SignInHref("guest")">
+            <div class="card-body p-5">
+                <h3 class="font-bold text-base">Guest</h3>
+                <div class="flex gap-1 flex-wrap mt-1">
+                    <span class="badge badge-sm badge-ghost">no roles</span>
+                </div>
+                <p class="text-xs text-base-content/60 mt-2">Authenticated with no special claims.</p>
+            </div>
+        </a>
+    </div>
+
+    <p class="text-center text-xs text-base-content/40">
+        The auth cookie expires after 2 minutes (sliding disabled) so you can see the
+        “session expired → 401 → reload to login” flow.
+    </p>
+</div>
+
+@code {
+    [Parameter, SupplyParameterFromQuery(Name = "ReturnUrl")]
+    public string? ReturnUrl { get; set; }
+
+    private string SignInHref(string persona)
+    {
+        var query = new Dictionary<string, string?> { ["persona"] = persona };
+        if (!string.IsNullOrEmpty(ReturnUrl)) query["returnUrl"] = ReturnUrl;
+        return QueryHelpers.AddQueryString("/auth/signin", query);
+    }
+}

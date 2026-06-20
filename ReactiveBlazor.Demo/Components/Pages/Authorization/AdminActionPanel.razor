@@ -1,0 +1,65 @@
+@inherits ReactiveBlazor.ReactiveComponent
+@inject ReactiveBlazor.Demo.Services.AuditLogService Audit
+
+@*
+    Action-level authorization. The component itself is visible to everyone, but the
+    privileged action carries [Authorize(Roles = "Admin")]. ReactiveBlazor authorizes it on the
+    SERVER before the action runs — a non-admin clicking the button gets a 403 (surfaced as a
+    reactive:error toast), and the action body never executes. The public action is unguarded.
+*@
+
+<ReactiveRoot Owner="this">
+    <div class="card bg-base-100 border border-base-300 shadow-sm" id="admin-action-panel">
+        <div class="card-body p-5 space-y-3">
+            <div class="flex items-center justify-between">
+                <h3 class="font-bold text-base">Action-level <code class="text-primary">[Authorize]</code></h3>
+                <span class="badge badge-sm badge-primary badge-outline font-mono">[Authorize(Roles="Admin")]</span>
+            </div>
+            <p class="text-xs text-base-content/60">
+                Everyone sees this panel. Only an <strong>Admin</strong> can run the privileged action —
+                the check happens server-side, so hiding the button is not what protects it.
+            </p>
+
+            <div class="stat bg-base-200/40 rounded-lg py-2 px-3">
+                <div class="stat-title text-xs">Privileged runs</div>
+                <div class="stat-value text-2xl text-primary tabular-nums">@PrivilegedRuns</div>
+            </div>
+
+            <div class="flex gap-2 flex-wrap">
+                <button class="btn btn-primary btn-sm" type="button" data-on-click="RunPrivileged" data-queue="all">
+                    Run privileged action
+                </button>
+                <button class="btn btn-ghost btn-sm" type="button" data-on-click="RunPublic">
+                    Run public action
+                </button>
+            </div>
+
+            @if (!string.IsNullOrEmpty(LastResult))
+            {
+                <div class="text-[11px] font-mono text-success border-t border-base-300 pt-2">@LastResult</div>
+            }
+        </div>
+    </div>
+</ReactiveRoot>
+
+@code {
+    public int PrivilegedRuns { get; set; }
+    public string LastResult { get; set; } = "";
+
+    // Authorized on the server before this body runs. A non-admin never reaches this code.
+    [ReactiveAction]
+    [Authorize(Roles = "Admin")]
+    public void RunPrivileged()
+    {
+        PrivilegedRuns++;
+        Audit.Add($"Privileged action invoked (run #{PrivilegedRuns}).");
+        ReactiveSignals.Publish<AuditEntryAdded>(new($"Privileged action invoked (run #{PrivilegedRuns})."));
+        LastResult = $"Privileged action succeeded at {DateTime.Now:HH:mm:ss}.";
+    }
+
+    [ReactiveAction]
+    public void RunPublic()
+    {
+        LastResult = $"Public action ran (no authorization required) at {DateTime.Now:HH:mm:ss}.";
+    }
+}

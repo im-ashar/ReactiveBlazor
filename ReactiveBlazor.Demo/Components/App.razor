@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>ReactiveBlazor Demo</title>
-    <meta name="description" content="Interactive demo of ReactiveBlazor — stateful SSR components without SignalR or WebAssembly." />
+    <meta name="description" content="Interactive demo of ReactiveBlazor ï¿½ stateful SSR components without SignalR or WebAssembly." />
     <base href="/" />
     <ResourcePreloader />
     <link rel="stylesheet" href="@Assets["app.output.css"]" />
@@ -24,5 +24,25 @@
 <body class="font-sans">
     <Routes />
     <script src="@Assets["_framework/blazor.web.js"]"></script>
+    <script>
+        // Surface ReactiveBlazor dispatch errors as a lightweight toast. A 403 (authenticated but
+        // not allowed) lands here; a 401 (unauthenticated) is handled by the runtime itself, which
+        // stops polling and reloads so the app's login redirect fires.
+        document.addEventListener("reactive:error", function (e) {
+            var status = e.detail && e.detail.status;
+            var msg = status === 403
+                ? "Not authorized to perform that action (403)."
+                : "Request failed" + (status ? " (" + status + ")." : ".");
+            var toast = document.createElement("div");
+            toast.className = "toast toast-top toast-end";
+            // Inline z-index (not a Tailwind class) so it reliably sits above the sticky navbar
+            // without depending on the build-time CSS scanner picking up a class from this string.
+            toast.style.zIndex = "9999";
+            toast.innerHTML = '<div class="alert alert-error shadow-lg"><span>' + msg + '</span></div>';
+            document.body.appendChild(toast);
+            setTimeout(function () { toast.remove(); }, 3500);
+        });
+    </script>
+    <script src="@Assets["replay-lab.js"]"></script>
 </body>
 </html>

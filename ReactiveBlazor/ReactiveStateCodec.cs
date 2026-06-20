@@ -1,8 +1,10 @@
 using System.Collections.Concurrent;
 using System.Reflection;
+using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text;
 using Microsoft.AspNetCore.DataProtection;
+using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -31,20 +33,63 @@ internal sealed class ReactiveStateCodec : IReactiveStateCodec
     private readonly ReactiveComponentRegistry _registry;
     private readonly ILogger<ReactiveStateCodec> _logger;
     private readonly ReactiveOptions _options;
+    private readonly IHttpContextAccessor? _httpContextAccessor;
 
     // Cache the hash per component type and opt-in flag — it never changes at runtime.
     private static readonly ConcurrentDictionary<(Type, bool), uint> StateHashCache = new();
+
+    // The 16-byte user binding tag, computed once per request (the codec is scoped) and reused for
+    // every component on the page. Lazily initialized on first use; null sentinel via _userTagComputed.
+    private byte[]? _userTag;
+    private bool _userTagComputed;
+
+    // Length (bytes) of the user binding tag embedded after the nonce when BindStateToUser is on.
+    private const int UserTagLength = 16;
 
     public ReactiveStateCodec(
         IDataProtectionProvider dp,
         ReactiveComponentRegistry registry,
         ILogger<ReactiveStateCodec> logger,
-        IOptions<ReactiveOptions> options)
+        IOptions<ReactiveOptions> options,
+        IHttpContextAccessor? httpContextAccessor = null)
     {
-        _protector = dp.CreateProtector("ReactiveBlazor.State.v2");
+        _options = options.Value;
+        // Use a distinct Data Protection purpose when user-binding is enabled so the two token
+        // formats can never be cross-decoded, and the off-path stays byte-for-byte unchanged.
+        _protector = dp.CreateProtector(
+            _options.BindStateToUser ? "ReactiveBlazor.State.v2.userbound" : "ReactiveBlazor.State.v2");
         _registry = registry;
         _logger = logger;
-        _options = options.Value;
+        _httpContextAccessor = httpContextAccessor;
+    }
+
+    /// <summary>
+    /// Returns the 16-byte tag binding a token to the current user, or <c>null</c> when user binding
+    /// is disabled. Computed once per request (scoped codec) and cached. Anonymous users map to a
+    /// fixed "no user" tag, so their tokens are interchangeable only among other anonymous requests.
+    /// </summary>
+    private byte[]? GetUserTag()
+    {
+        if (!_options.BindStateToUser)
+            return null;
+        if (_userTagComputed)
+            return _userTag;
+
+        var user = _httpContextAccessor?.HttpContext?.User;
+        // Prefer a stable, unique id claim; fall back to the name. Anonymous → empty string.
+        var id = user?.Identity?.IsAuthenticated == true
+            ? user.FindFirst(ClaimTypes.NameIdentifier)?.Value
+              ?? user.FindFirst("sub")?.Value
+              ?? user.Identity.Name
+              ?? ""
+            : "";
+
+        // 16 bytes (128 bits) is ample for an equality check and keeps tokens small.
+        Span<byte> full = stackalloc byte[32];
+        SHA256.HashData(Encoding.UTF8.GetBytes("ReactiveBlazor.user:" + id), full);
+        _userTag = full[..UserTagLength].ToArray();
+        _userTagComputed = true;
+        return _userTag;
     }
 
     public string Protect(Type componentType, string stateJson)
@@ -55,9 +100,11 @@ internal sealed class ReactiveStateCodec : IReactiveStateCodec
         var hash = ComputeStateHash(componentType, _options.RequireOptInState);
         var timestamp = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
         var nonceBytes = Guid.NewGuid().ToByteArray();
+        var userTag = GetUserTag(); // null unless BindStateToUser is on
 
-        // Binary format: [4-byte key length (BE)][key bytes][4-byte state hash][8-byte timestamp (BE)][16-byte nonce][state bytes]
-        var payload = new byte[4 + keyBytes.Length + 4 + 8 + 16 + stateBytes.Length];
+        // Binary format: [4-byte key length (BE)][key bytes][4-byte state hash][8-byte timestamp (BE)][16-byte nonce][16-byte user tag, only when bound][state bytes]
+        var userTagLen = userTag?.Length ?? 0;
+        var payload = new byte[4 + keyBytes.Length + 4 + 8 + 16 + userTagLen + stateBytes.Length];
         var offset = 0;
 
         // Key length (4 bytes, big-endian)
@@ -90,6 +137,14 @@ internal sealed class ReactiveStateCodec : IReactiveStateCodec
         Buffer.BlockCopy(nonceBytes, 0, payload, offset, 16);
         offset += 16;
 
+        // User binding tag (16 bytes) — only present when BindStateToUser is on. The distinct
+        // protector purpose keeps the two formats from ever being cross-decoded.
+        if (userTag is not null)
+        {
+            Buffer.BlockCopy(userTag, 0, payload, offset, userTagLen);
+            offset += userTagLen;
+        }
+
         // State bytes
         Buffer.BlockCopy(stateBytes, 0, payload, offset, stateBytes.Length);
 
@@ -111,13 +166,16 @@ internal sealed class ReactiveStateCodec : IReactiveStateCodec
         // Throws CryptographicException if the payload was tampered with.
         var payload = _protector.Unprotect(protectedBytes);
 
-        // Minimum: 4 (key len) + 1 (key) + 4 (hash) + 8 (timestamp) + 16 (nonce) = 33
-        if (payload.Length < 33)
+        var userTag = GetUserTag(); // null unless BindStateToUser is on
+        var userTagLen = userTag?.Length ?? 0;
+
+        // Minimum: 4 (key len) + 1 (key) + 4 (hash) + 8 (timestamp) + 16 (nonce) [+ 16 user tag] = 33 (+16)
+        if (payload.Length < 33 + userTagLen)
             throw new InvalidOperationException("Malformed state envelope: too short.");
 
         // Read key length
         var keyLength = (payload[0] << 24) | (payload[1] << 16) | (payload[2] << 8) | payload[3];
-        if (keyLength < 0 || 4 + keyLength + 4 + 8 + 16 > payload.Length)
+        if (keyLength < 0 || 4 + keyLength + 4 + 8 + 16 + userTagLen > payload.Length)
             throw new InvalidOperationException("Malformed state envelope: invalid key length.");
 
         var key = Encoding.UTF8.GetString(payload, 4, keyLength);
@@ -148,6 +206,24 @@ internal sealed class ReactiveStateCodec : IReactiveStateCodec
         Buffer.BlockCopy(payload, nonceOffset, nonceBytes, 0, 16);
         var nonce = new Guid(nonceBytes).ToString("N");
 
+        // User binding check (only when BindStateToUser is on). The 16-byte tag follows the nonce.
+        // If the token was issued to a different user than the one making this request, reset to
+        // default state — same safe, non-throwing behavior as expiry / shape mismatch. Fixed-time
+        // compare avoids leaking equality timing.
+        var stateOffset = nonceOffset + 16;
+        if (userTag is not null)
+        {
+            var storedTag = new ReadOnlySpan<byte>(payload, stateOffset, userTagLen);
+            if (!CryptographicOperations.FixedTimeEquals(storedTag, userTag))
+            {
+                _logger.LogWarning(
+                    "State token for {Component} was issued to a different user (possible cross-user replay). Resetting to default state.",
+                    type.Name);
+                return (type, "{}", nonce);
+            }
+            stateOffset += userTagLen;
+        }
+
         // Check token expiration (if lifetime is configured).
         if (_options.StateTokenLifetime > TimeSpan.Zero)
         {
@@ -175,7 +251,7 @@ internal sealed class ReactiveStateCodec : IReactiveStateCodec
             return (type, "{}", nonce);
         }
 
-        var stateJson = Encoding.UTF8.GetString(payload, nonceOffset + 16, payload.Length - nonceOffset - 16);
+        var stateJson = Encoding.UTF8.GetString(payload, stateOffset, payload.Length - stateOffset);
         return (type, stateJson, nonce);
     }
 

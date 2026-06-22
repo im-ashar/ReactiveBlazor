@@ -8,7 +8,7 @@
       * the version shown in the demo UI
   -->
   <PropertyGroup>
-    <ReactiveBlazorVersion>1.6.1</ReactiveBlazorVersion>
+    <ReactiveBlazorVersion>1.6.2</ReactiveBlazorVersion>
   </PropertyGroup>
 
 </Project>

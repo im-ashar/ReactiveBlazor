@@ -61,4 +61,66 @@ public class ProductService
     public List<Product> GetProducts() => MockProducts;
 
     public Product? GetProductById(int id) => MockProducts.FirstOrDefault(p => p.Id == id);
+
+    // ---- Large generated catalog (for the "large list" demo) ----
+    // Deterministically generated once and cached. Stands in for a database table with thousands
+    // of rows. The point of the demo: this list NEVER goes into reactive state — the component
+    // re-queries it server-side on every render from a few small state values (search/sort/page).
+
+    private const int LargeCatalogSize = 5000;
+
+    private static readonly string[] Adjectives =
+        ["Mechanical", "Wireless", "Ergonomic", "Ultra-Wide", "Smart", "Portable", "Premium",
+         "Compact", "Gaming", "Studio", "Industrial", "Minimalist", "Rugged", "Modular"];
+
+    private static readonly string[] Nouns =
+        ["Keyboard", "Mouse", "Headphones", "Monitor", "Desk Lamp", "Webcam", "Microphone",
+         "Dock", "Hub", "Stand", "Cable", "Charger", "Speaker", "Tablet", "Stylus", "Trackpad"];
+
+    private static readonly Lazy<List<Product>> LargeCatalog = new(() =>
+    {
+        var list = new List<Product>(LargeCatalogSize);
+        for (var i = 0; i < LargeCatalogSize; i++)
+        {
+            var adj = Adjectives[i % Adjectives.Length];
+            var noun = Nouns[(i / Adjectives.Length) % Nouns.Length];
+            list.Add(new Product
+            {
+                Id = i + 1,
+                Name = $"{adj} {noun} #{i + 1}",
+                Description = $"A {adj.ToLowerInvariant()} {noun.ToLowerInvariant()} built for everyday productivity.",
+                // Deterministic pseudo-price in the 9.99–509.99 range (no Random — keeps it stable).
+                Price = 9.99m + (i * 37 % 500),
+                ImageUrl = ""
+            });
+        }
+        return list;
+    });
+
+    /// <summary>
+    /// Queries the large catalog server-side: filter by search term, sort, and return just the
+    /// requested page. Mirrors what a real <c>IQueryable</c>/EF Core query against a DB would do.
+    /// </summary>
+    public (List<Product> Items, int TotalCount) QueryCatalog(
+        string? search, string sortBy, bool descending, int page, int pageSize)
+    {
+        IEnumerable<Product> query = LargeCatalog.Value;
+
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var q = search.Trim().ToLowerInvariant();
+            query = query.Where(p => p.Name.ToLowerInvariant().Contains(q));
+        }
+
+        query = sortBy switch
+        {
+            "Price" => descending ? query.OrderByDescending(p => p.Price) : query.OrderBy(p => p.Price),
+            "Id" => descending ? query.OrderByDescending(p => p.Id) : query.OrderBy(p => p.Id),
+            _ => descending ? query.OrderByDescending(p => p.Name) : query.OrderBy(p => p.Name),
+        };
+
+        var total = query.Count();
+        var items = query.Skip((page - 1) * pageSize).Take(pageSize).ToList();
+        return (items, total);
+    }
 }

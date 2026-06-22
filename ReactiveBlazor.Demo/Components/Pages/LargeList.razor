@@ -1,0 +1,162 @@
+@page "/large-list"
+@inherits ReactiveBlazor.ReactiveComponent
+@inject ReactiveBlazor.Demo.Services.ProductService ProductService
+
+<PageTitle>Large List (Server Paging) - ReactiveBlazor Demo</PageTitle>
+
+<ReactiveRoot Owner="this">
+    <div class="space-y-6">
+        <!-- Page Header -->
+        <div class="flex flex-col md:flex-row md:items-center justify-between border-b border-base-300 pb-4 gap-4">
+            <div>
+                <h1 class="text-3xl font-bold text-base-content">Large List with Server Paging</h1>
+                <p class="text-sm text-base-content/60 mt-1">A 5,000-row catalog. Only the page, search, and sort live in state — the rows are re-queried server-side every render and <strong>never</strong> touch the state token.</p>
+            </div>
+            <div class="badge badge-secondary badge-outline font-semibold gap-2 py-3 px-4">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 10h16M4 14h16M4 18h16" />
+                </svg>
+                Lean State
+            </div>
+        </div>
+
+        <!-- The teaching callout -->
+        <div class="alert bg-info/10 border border-info/20 text-sm">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 shrink-0 text-info" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            <span>
+                The <code class="text-info">Rows</code> list is marked <code class="text-info">[ReactiveIgnore]</code>, so the state token only carries
+                <code class="text-info">Search</code>, <code class="text-info">SortBy</code>, <code class="text-info">Descending</code>, and <code class="text-info">Page</code> —
+                a few dozen bytes regardless of catalog size.
+            </span>
+        </div>
+
+        <!-- Controls -->
+        <div class="card bg-base-100 border border-base-300 shadow-sm">
+            <div class="card-body p-6">
+                <div class="flex flex-col md:flex-row gap-4 md:items-end">
+                    <div class="form-control w-full max-w-md">
+                        <label class="label"><span class="label-text font-semibold">Filter by name</span></label>
+                        <input type="search"
+                               class="input input-bordered w-full"
+                               data-bind="Search"
+                               value="@Search"
+                               data-on-input="ApplyFilter"
+                               data-debounce="250"
+                               placeholder="e.g. keyboard, monitor..." />
+                    </div>
+
+                    <div class="form-control">
+                        <label class="label"><span class="label-text font-semibold">Sort by</span></label>
+                        <select class="select select-bordered" data-bind="SortBy" data-on-change="ApplyFilter">
+                            <option value="Name" selected="@(SortBy == "Name")">Name</option>
+                            <option value="Price" selected="@(SortBy == "Price")">Price</option>
+                            <option value="Id" selected="@(SortBy == "Id")">Id</option>
+                        </select>
+                    </div>
+
+                    <button class="btn btn-outline gap-2" data-on-click="ToggleSortDirection">
+                        @(Descending ? "Descending ↓" : "Ascending ↑")
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Results table -->
+        <div class="card bg-base-100 border border-base-300 shadow-sm overflow-hidden">
+            <div class="overflow-x-auto">
+                <table class="table table-zebra">
+                    <thead>
+                        <tr>
+                            <th class="w-20">Id</th>
+                            <th>Product</th>
+                            <th class="text-right w-32">Price</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @if (Rows.Count == 0)
+                        {
+                            <tr>
+                                <td colspan="3" class="text-center text-base-content/50 py-12">
+                                    No products match "@Search".
+                                </td>
+                            </tr>
+                        }
+                        else
+                        {
+                            @foreach (var p in Rows)
+                            {
+                                <tr>
+                                    <td class="tabular-nums text-base-content/50">#@p.Id</td>
+                                    <td class="font-medium">@p.Name</td>
+                                    <td class="text-right tabular-nums font-semibold text-primary">@p.Price.ToString("C")</td>
+                                </tr>
+                            }
+                        }
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Pager -->
+            <div class="flex flex-col sm:flex-row items-center justify-between gap-3 p-4 border-t border-base-300 bg-base-200/30">
+                <span class="text-sm text-base-content/60 tabular-nums">
+                    Showing <strong>@FirstRowNumber–@LastRowNumber</strong> of <strong>@TotalCount</strong> products
+                </span>
+                <div class="join">
+                    <button class="join-item btn btn-sm" data-on-click="FirstPage" disabled="@(Page <= 1)">«</button>
+                    <button class="join-item btn btn-sm" data-on-click="PrevPage" disabled="@(Page <= 1)">Prev</button>
+                    <button class="join-item btn btn-sm btn-active pointer-events-none">Page @Page / @TotalPages</button>
+                    <button class="join-item btn btn-sm" data-on-click="NextPage" disabled="@(Page >= TotalPages)">Next</button>
+                    <button class="join-item btn btn-sm" data-on-click="LastPage" disabled="@(Page >= TotalPages)">»</button>
+                </div>
+            </div>
+        </div>
+    </div>
+</ReactiveRoot>
+
+@code {
+    private const int PageSize = 25;
+
+    // ── State (rides in the token): small scalars that DESCRIBE what to show. ──
+    public string Search { get; set; } = "";
+    public string SortBy { get; set; } = "Name";
+    public bool Descending { get; set; }
+    public int Page { get; set; } = 1;
+
+    // ── NOT state: the heavy data, rebuilt every render from the scalars above. ──
+    [ReactiveIgnore] public List<ReactiveBlazor.Demo.Models.Product> Rows { get; set; } = [];
+    [ReactiveIgnore] public int TotalCount { get; set; }
+
+    private int TotalPages => Math.Max(1, (int)Math.Ceiling(TotalCount / (double)PageSize));
+    private int FirstRowNumber => TotalCount == 0 ? 0 : (Page - 1) * PageSize + 1;
+    private int LastRowNumber => Math.Min(Page * PageSize, TotalCount);
+
+    // Runs on every dispatch (after state rehydration + the action). This is where the visible
+    // page is re-queried from the service — the rows are derived data, not state.
+    protected override void OnParametersSet()
+    {
+        if (Page < 1) Page = 1;
+
+        var result = ProductService.QueryCatalog(Search, SortBy, Descending, Page, PageSize);
+
+        // If a new filter shrank the result set below the current page, clamp and re-query once.
+        // (Most renders skip this — only happens right after a filter change deep in the list.)
+        var pages = Math.Max(1, (int)Math.Ceiling(result.TotalCount / (double)PageSize));
+        if (Page > pages)
+        {
+            Page = pages;
+            result = ProductService.QueryCatalog(Search, SortBy, Descending, Page, PageSize);
+        }
+
+        Rows = result.Items;
+        TotalCount = result.TotalCount;
+    }
+
+    [ReactiveAction] public void ApplyFilter() => Page = 1;          // new filter/sort → back to page 1
+    [ReactiveAction] public void ToggleSortDirection() { Descending = !Descending; Page = 1; }
+    [ReactiveAction] public void FirstPage() => Page = 1;
+    [ReactiveAction] public void PrevPage() => Page--;
+    [ReactiveAction] public void NextPage() => Page++;
+    [ReactiveAction] public void LastPage() => Page = TotalPages;
+}

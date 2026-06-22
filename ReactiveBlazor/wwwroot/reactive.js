@@ -213,6 +213,13 @@
         return;
       }
 
+      // ignoreActiveValue must be decided per-morph from the *currently focused* element.
+      // In this idiomorph build the option skips child-node morphing of document.activeElement,
+      // not just its value — so leaving it on while a <button> is focused (e.g. just clicked)
+      // would suppress that button's own label/content update. Enable it only when a text field
+      // is focused, which is the sole place the keystroke-vs-stale-echo race exists.
+      var ignoreActiveValue = isTextFieldFocused();
+
       // Morph all updated components on the page
       for (var id in updates) {
         var target = document.getElementById(id);
@@ -225,12 +232,12 @@
         if (!incoming) continue;
 
         if (window.Idiomorph) {
-          // ignoreActiveValue: don't overwrite the `value` of the currently-focused input/textarea.
-          // The browser already holds the user's latest keystrokes there; the server's echoed value
-          // is necessarily one round-trip stale. Everything else in the component still morphs.
+          // When a text field is focused, don't overwrite its value: the browser already holds the
+          // user's latest keystrokes, and the server's echoed value is one round-trip stale.
+          // Everything else in the component still morphs.
           Idiomorph.morph(target, incoming, {
             morphStyle: "outerHTML",
-            ignoreActiveValue: true
+            ignoreActiveValue: ignoreActiveValue
           });
         } else {
           target.replaceWith(incoming);
@@ -264,6 +271,29 @@
   function clearBusy(el) {
     el.removeAttribute("data-reactive-busy");
     el.classList.remove("reactive-loading");
+  }
+
+  // True when the focused element is an editable text field whose value the user may be mid-typing
+  // into. Used to scope idiomorph's ignoreActiveValue so it never suppresses morphing of a focused
+  // non-text element (e.g. a button's own label after it was clicked).
+  function isTextFieldFocused() {
+    var el = document.activeElement;
+    if (!el) return false;
+    var tag = el.tagName;
+    if (tag === "TEXTAREA") return true;
+    if (el.isContentEditable) return true;
+    if (tag !== "INPUT") return false;
+    // A readonly/disabled field can be focused but not typed into, so there's no keystroke race —
+    // let server updates to its value morph through.
+    if (el.readOnly || el.disabled) return false;
+    // Non-text input types (checkbox, radio, button, range, color, file, ...) carry no
+    // typed-but-unsent value, so there's nothing to protect from the stale server echo.
+    var type = (el.getAttribute("type") || "text").toLowerCase();
+    var nonText = {
+      checkbox: 1, radio: 1, button: 1, submit: 1, reset: 1,
+      range: 1, color: 1, file: 1, image: 1
+    };
+    return !nonText[type];
   }
 
   // ---- Fetch with one retry on network failure ----
